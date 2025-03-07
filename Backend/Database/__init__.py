@@ -1,1 +1,2 @@
-from UsersDBHandler import *;
+from .UsersDBHandler import *
+from ..CustomException import *

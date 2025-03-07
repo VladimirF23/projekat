@@ -10,7 +10,7 @@ from ..CustomException import *
 
 connection_pool = None
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), "devinfo.env"))
 
 # Retrieve variables from the environment
 

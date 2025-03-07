@@ -1,7 +1,8 @@
 
 # In UsersDBHandler.py
 from .DataBaseStart import *
-from Backend.CustomException.CustomExceptions import *
+from ..CustomException import *
+
 #ovako podeljeni fileo-vi i sloj api,service, db je prvi princip SOLID-a , single responsability
 
 
@@ -12,24 +13,23 @@ def RegisterUser(user:dict):
 
     #ovde ce biti exception ako vec postoji User sa ovim username-om
 
-    username      =  user["username "]
+    username      =  user["username"]
     email         =  user["email"]                          #nez dal da napravim na email-u kao da mu posaljem unique broj za potvrdu
     password_hash =  user["password_hash"]                  # i onda ako dobro unese taj broj na web-u da mu dam da bude registrovan
 
 
     query = """
      INSERT INTO Users (username, email, password_hash) 
-     VALUES ('%s', '%s, '%s')
+     VALUES (%s,%s,%s)
     """
 
-    values  = (username,email,password_hash)
     
     connection = getConnection()
 
     cursor = connection.cursor()
 
     try:
-        cursor.execute(query,values)                    #parametrizovani sql upiti MySql connector insertuje vrednosti u qeurry i provera da li ima SQL injectiona
+        cursor.execute(query,(username,email,password_hash))                    #parametrizovani sql upiti MySql connector insertuje vrednosti u qeurry i provera da li ima SQL injectiona
         connection.commit()
         return True
     
