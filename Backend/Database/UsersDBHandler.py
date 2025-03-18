@@ -50,5 +50,35 @@ def RegisterUser(user:dict):
 
 
 
+#mozemo ovu istu funkciju koju koristim za login koristiti za, autorizathion checks i user profile loading
+def GerUserCredentials(userCredentials: dict):
+    #username,email,hashepassword
+
+    #ako nije registrovan digni NotFoundException i stavi user not registered 
+    query = """
+        SELECT id, username, email, global_admin
+        FROM Users
+        WHERE username = %s AND password_hash = %s;
+    """
+    username = userCredentials["username"]
+    passwordHash = userCredentials["password"]
 
 
+    connection = getConnection()
+    cursor = connection.cursor(dictionary=True)         #ovde ga konvertujemo automatski da vrati kao dict
+
+    try:
+        cursor.execute(query,(username,passwordHash))
+
+        #fetcone vraca kao tuple pa cemo ga konvertovati u dict, lakse je preko dict jer pristupam sa imenima kolona, a ne ono indkesovano 0,1,2,3
+        #i jos je JSON ready jer mogu onda direkt da ga vratim direkt ka FLASK-API response preko jsonify
+        user = cursor.fetchone()
+
+        if not user:
+            raise NotFoundException("Username/password not valid")
+        
+        return user
+
+    finally:
+        cursor.close()
+        release_connection(connection)

@@ -47,6 +47,11 @@ def RegisterUserService(user:dict):
     RegisterUser(user_checked)                  #poziv DataBase Layer-a
 
 
+def LoginUserService(user:dict):
+
+    user["password"] = HashPassword(user["password"])
+    return GerUserCredentials(user)                     #DB sloj vraca dict tip
+
 
 
 
