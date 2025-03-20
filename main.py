@@ -17,6 +17,7 @@ app.config.from_object(Config)
 #Redis localhost port je setupovan u Config-u
 redis_client = redis.StrictRedis.from_url(app.config["REDIS_URL"])
 
+#JWT, JSON web token
 jwt = JWTManager(app)
 
 #NE ZABORAVI DA REGISTUJES BLUEPRINTOVE !
