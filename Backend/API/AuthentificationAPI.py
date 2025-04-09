@@ -1,26 +1,23 @@
 from ..Engine import *
 from flask import Blueprint, request,jsonify
 from ..CustomException import *
-from flask_jwt_extended import JWTManager,create_access_token,create_refresh_token,jwt_required,get_jwt
+from flask_jwt_extended import create_access_token,create_refresh_token,jwt_required,get_jwt
 from datetime import timedelta,datetime
-
 #iz maina importujemo objekat jwt koji smo kreirali
-from main import jwt
 
+
+from extensions import jwt,redis_client   # OVO POPRAVI NE RADI ONAJ check
 import redis
+
 auth_blueprint  = Blueprint("auth",__name__,url_prefix="/auth")
 
-# Redis Client Setup 
-redis_client = redis.StrictRedis.from_url("redis://localhost:6379/0", decode_responses=True)
-
-# Check Redis connection on app startup
+#Check Redis connection on app startup
 try:
     redis_client.ping()  # Test Redis connection
 except redis.ConnectionError:
     raise Exception("Failed to connect to Redis.")
 
 @auth_blueprint.route('/login',methods=['POST'])
-
 #metoda je post jer POST drzi sensitive data (email/password) u request body a on nije logovan u browser history
 #Get exposuje parametre u URL sto nije sigurno
 def login():
@@ -83,10 +80,10 @@ def refresh():
 
         #potrebno je u reddisu invalidatovati stari token i dodati ovaj novi
         old_jti = get_jwt()["jti"]  
-        redis_client.set(f"blocked_token:{old_jti}", "invalid", ex=int(timedelta(minutes=15).total_seconds()))  # Expiry should be same as new access token
+        #redis_client.set(f"blocked_token:{old_jti}", "invalid", ex=int(timedelta(minutes=15).total_seconds()))  # Expiry should be same as new access token
 
         #novi token
-        redis_client.set(f"access_token:{new_access_token}", "valid", ex=int(timedelta(minutes=15).total_seconds()))  # Set expiration time
+        #redis_client.set(f"access_token:{new_access_token}", "valid", ex=int(timedelta(minutes=15).total_seconds()))  # Set expiration time
 
         #opcijonalno updejtovati refresh token ali nema potrebe posto oni dugu traju, pa je fokus na access tokene
         return jsonify({"access token":new_access_token})

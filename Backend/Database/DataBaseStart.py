@@ -15,10 +15,11 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "devinfo.env"))
 # Retrieve variables from the environment
 
 #Da ne bi uplodovali na github devInfo ovako uzimamo i cuvamo info, u gitignore dodamo .env
-DB_HOST = os.getenv("DB_HOST")
+DB_HOST = os.getenv("DB_HOST")      #u .env umesto localhost sada koristimo ime service(container-a) i to je mysql
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_NAME = os.getenv("DB_NAME")
+DB_PORT =  int(os.getenv("DB_PORT"))
 POOL_NAME = os.getenv("POOL_NAME", "mypool")  # You can also fetch pool name from .env
 POOL_SIZE = int(os.getenv("POOL_SIZE", 10))  # Default pool size to 10 if not defined
 
@@ -31,6 +32,7 @@ def initializePool():
                 pool_size=POOL_SIZE,
                 host = DB_HOST,
                 user = DB_USER,
+                port = DB_PORT,
                 password =DB_PASSWORD,
                 database = DB_NAME
                 )

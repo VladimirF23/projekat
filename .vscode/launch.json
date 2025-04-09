@@ -1,0 +1,35 @@
+{
+    "version": "0.2.0",                                         //launch.json je config file za VSCode da definise kako da launchujemo i debugujemo aplikaciju
+    "configurations": [                                         //niz u kome definujemo razlicite debuging konfiguracije
+      {
+        "name": "Debug Flask App",                              //ime konfiguracije
+        "type": "debugpy",                                      //debuger koji koristimo
+        "request": "attach",                                    //Da li da runujemo ili atachujemo na pokrenuti proces u nasem slucaju atachujemo
+        "connect": {                                            //kako da se konektujemo na app
+          "host": "localhost",
+          "port": 5678                                          //port na koji se debuger connectuje ovaj port sam exposovoa u flask conteineru
+        },
+        "pathMappings": [                                       //mapiranje izmedju lokal i remote file path-ova, Ovo je vazan deo pri radu sa Docker-om ili remote enviermentom
+          {
+            "localRoot": "${workspaceFolder}",                  //Path na lokalnoj masini ka source code-u
+            "remoteRoot": "/usr/src/app"                        //path unutar kontejnera gde residuje source code, ovo nam osigurava da kada debuger dodje do breakPointa
+          }                                                     //da VS code moze da mapira file-ove ispravno izmedju lokalnih i kontejnera
+        ],
+        "preLaunchTask": "Start Docker Containers",              //prelaunch govori koji task pre debug sessiona da se pokrene, to je onaj tasks.json tu sam stavio ovaj start docker
+        "postDebugTask": "Stop Docker Containers"                // optional: shuts down containers after debug ends
+
+        },                                                        //Sto znaci da pre debugovanja VS code pokrece task koji startuje Docker containere koristeci docker compose
+      {
+        "name": "Run Flask app (no debug)",
+        "type": "debugpy",                                      //ne moze python posto je kao obsolete pa koristim iz obican run ovaj debugpy
+        "request": "launch",
+        "program": "${workspaceFolder}/main.py",
+        "console": "integratedTerminal",
+        "justMyCode": false,                                     //osigurava full code execution no debuging
+        "preLaunchTask": "Start Docker Containers"               // Ovo nam osigurava da ce se svi docker kointeneri pokrenuti to se desava u  tasks.json koji je nazvan Start...
+
+
+      }                                                       
+    ]   
+  }
+  
