@@ -12,7 +12,7 @@ def CreateSubbreditService(subreddit:dict):
     
     if len(subreddit["description"] >200):
         raise IlegalValuesException("Subreddit description does not meet the maximum (200 characters) length requirement.")
-    elif len(subreddit["description"]==0):
+    elif len(subreddit["description"]<1):
         raise IlegalValuesException("Subreddit description does not meet the minimum (1 characters) length requirement.")
     
     if not subreddit["created_by"]:

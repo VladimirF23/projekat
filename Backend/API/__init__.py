@@ -3,3 +3,4 @@
 from .RegistrationAPI import *
 from .AuthentificationAPI import *
 from .SubredditAPI import*
+from .UserAPI import *

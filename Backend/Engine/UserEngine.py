@@ -55,6 +55,13 @@ def LoginUserService(user:dict):
 
 
 
+def joinSubredditService(user_id:int,subreddit_id:int):
+    joinSubreddit(user_id,subreddit_id)
+
+
+def leaveSubredditService(user_id:int, subreddit_id:int):
+    leaveSubreddit(user_id,subreddit_id)
+    
 
 
 

@@ -1,7 +1,7 @@
 from ..Engine import *
 from flask import Blueprint, request,jsonify
 from ..CustomException import *
-from flask_jwt_extended import create_access_token,create_refresh_token,jwt_required,get_jwt,get_jwt_identity
+from flask_jwt_extended import jwt_required,get_jwt,get_jwt_identity
 
 
 subbredit_blueprint = Blueprint('subbredit_creation',__name__,url_prefix='/subreddit')
