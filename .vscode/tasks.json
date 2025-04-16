@@ -13,7 +13,7 @@
       {
         "label": "Stop Docker Containers",          //ne treba da brise volume kada se ugasi kontainer 
         "type": "shell",
-        "command": "docker compose down",
+        "command": "docker compose stop",           //docker compose down da ih removuje,  a stop je da ih ugasi samo
         "problemMatcher": [],
         "presentation": {
           "reveal": "always"

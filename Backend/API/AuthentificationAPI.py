@@ -6,16 +6,17 @@ from datetime import timedelta,datetime
 #iz maina importujemo objekat jwt koji smo kreirali
 
 
-from extensions import jwt,redis_client   # OVO POPRAVI NE RADI ONAJ check
+from extensions import jwt,redis_client   
 import redis
 
-auth_blueprint  = Blueprint("auth",__name__,url_prefix="/auth")
 
 #Check Redis connection on app startup
 try:
     redis_client.ping()  # Test Redis connection
 except redis.ConnectionError:
     raise Exception("Failed to connect to Redis.")
+
+auth_blueprint  = Blueprint("auth",__name__,url_prefix="/auth")
 
 @auth_blueprint.route('/login',methods=['POST'])
 #metoda je post jer POST drzi sensitive data (email/password) u request body a on nije logovan u browser history
@@ -40,8 +41,9 @@ def login():
         user =  LoginUserService(user_data)
 
         #na globalnom nivou u main-u smo set-upovali token i koje algoritam sa enkripciju da koristi i sve, ovde kreiramo te tokene
-        access_token =create_access_token(identity=user["id"],additional_claims={"role":user["role"]},expires_delta=timedelta(minutes=15))              #najboljeje id da koristimo za identity jer se on niakd nece menjatim, 
-        refresh_token = create_refresh_token(identity=user["id"],additional_claims={"role":user["role"]} ,expires_delta=timedelta(days=7))              #a username se moze menjati
+        #identinty mora biti str() 
+        access_token =create_access_token(identity=str(user["id"]),additional_claims={"global_admin":"global_admin" if user["global_admin"] else "user"},expires_delta=timedelta(minutes=15))              #najboljeje id da koristimo za identity jer se on niakd nece menjatim, 
+        refresh_token = create_refresh_token(identity=str(user["id"]),additional_claims={"global_admin":"global_admin" if user["global_admin"] else "user"},expires_delta=timedelta(days=7))              #a username se moze menjati
 
 
         redis_client.set(f"access_token:{access_token}","valid",ex=int(timedelta(minutes=15).total_seconds()))  #radis ex uzimamo int u total sekundama !
@@ -55,9 +57,9 @@ def login():
     except ConnectionException as e:
         return jsonify({"error": "Internal server error", "details": str(e)}), 500   
 
+
 #kada Flask-JWT-extended vidi @jwt.token_in_blocklist_loader on registruje check_if_token_is_blacklisted funkciju na svaki pristuzajuci JWT
 #Svaki put kada se pristupa @jwt_required() Flask-JWT-Extended extrakctuje JWT iz requesta (iz authorizathion header-a) i provera JWT potpis i istek 
-
 #Ako je validan TEK onda zove check_if_token...
 #Redis get kao da smo prosledili hashmapi kljuc i proveravamo da li je taj TOKEN idalje validan
 @jwt.token_in_blocklist_loader
@@ -70,6 +72,9 @@ def check_if_token_is_blacklisted(jwt_header, jwt_payload):     #jwt_header sadr
 #pozove check_if_token_is_blacklisted
 #Ako funkcija vrati TRUE znaci da je blaclistovan token i request se rejectuje sa 401 Unauthorized, ako vrati False dozvoljava se pristup 200 ok
 
+
+
+
 #u TODO je dodato kako ovo radi silent sa JAVASCRIPTOM
 @auth_blueprint.route('/refresh',methods=['POST'])
 @jwt_required(refresh=True)
@@ -80,10 +85,9 @@ def refresh():
 
         #potrebno je u reddisu invalidatovati stari token i dodati ovaj novi
         old_jti = get_jwt()["jti"]  
-        #redis_client.set(f"blocked_token:{old_jti}", "invalid", ex=int(timedelta(minutes=15).total_seconds()))  # Expiry should be same as new access token
-
+        redis_client.set(f"blocked_token:{old_jti}", "invalid", ex=int(timedelta(minutes=15).total_seconds()))  # Expiry should be same as new access token
         #novi token
-        #redis_client.set(f"access_token:{new_access_token}", "valid", ex=int(timedelta(minutes=15).total_seconds()))  # Set expiration time
+        redis_client.set(f"access_token:{new_access_token}", "valid", ex=int(timedelta(minutes=15).total_seconds()))  # Set expiration time
 
         #opcijonalno updejtovati refresh token ali nema potrebe posto oni dugu traju, pa je fokus na access tokene
         return jsonify({"access token":new_access_token})
@@ -111,7 +115,7 @@ def logout():                               #takoddje raiseuje error ako nema to
         exp = get_jwt()["exp"]  # da dinamicki postavimo kolko ce u radisu (blocklisti) biti token nako sto se logoutuje, postavimo da je timeout trenutno kolko mu je ostalo od original.
         
         if not jti or not exp:
-            return jsonify({"error","Invalid JWT structure"}),400
+            return jsonify({"error":"Invalid JWT structure"}),400
 
         ttl = int(exp - datetime.utcnow().timestamp())
 
@@ -132,12 +136,13 @@ def logout():                               #takoddje raiseuje error ako nema to
 
 
 
+
 @auth_blueprint.route('/admin', methods=['GET'])
 @jwt_required()
 def admin_only():
     try:
         jwt_data = get_jwt()
-        if jwt_data.get("role").lower() != "admin":
+        if jwt_data.get("global_admin").lower() != "global_admin":             #u tokenu sam dodao addtion_claim field u jwt tokenu za global admin-a
             return jsonify({"error": "Unauthorized"}), 403
 
         return jsonify({"message": "Welcome, Admin!"}), 200

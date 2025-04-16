@@ -31,4 +31,7 @@ echo "✅ MySQL is up."
 
 # Startujemo Flask app
 echo "🚀 Starting Flask app..."
-exec python main.py
+#exec python main.py
+exec python -m debugpy --listen 0.0.0.0:5678 --wait-for-client main.py              #debuger ima fora zasto mora ovako a ne preko onog  u main-u sto ceka kao
+
+#prvo manuelno sa docker-compose up da napravis containere ako si removovao i onda pozoves debug onaj preko VS-a e tada moze da se debuguje

@@ -11,6 +11,7 @@ services:
       - ./devinfoDocker.env  # Ensure correct path # Load variables from .env file   
     ports:
       - "5000:5000"        #mapiraj port 5000 na host machini na port 5000 unutar kontejnera
+      - "5678:5678"        # za debugpy
 
     environment:
       - MYSQL_HOST=${MYSQL_HOST}

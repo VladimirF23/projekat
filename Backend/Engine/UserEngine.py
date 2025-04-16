@@ -3,6 +3,7 @@ from ..Database import *                #importujemo DataBase Handlere, tu se na
 import bcrypt
 import re
 
+#treba koristii
 def HashPassword(password:str)->str:
     salt = bcrypt.gensalt()
     hashed_password = bcrypt.hashpw(password.encode('utf-8'),salt)      #encoduje se u byte
@@ -49,8 +50,8 @@ def RegisterUserService(user:dict):
 
 def LoginUserService(user:dict):
 
-    user["password"] = HashPassword(user["password"])
-    return GerUserCredentials(user)                     #DB sloj vraca dict tip
+    #user["password"] = HashPassword(user["password"])   NE TREBA DA SE HASHUJE SIFRA ZBOG SALT-a ONDA SE NIKAD NECE POREDITI ISTI HASH CAK I AKO SE UNETA SIFRA POKLAPA SA DB sifrom 
+    return GerUserCredentials(user)                     #DB sloj vraca dict tip, ako je sve ok vratice user-a sa infom
 
 
 

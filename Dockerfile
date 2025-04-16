@@ -18,16 +18,19 @@ RUN pip install --no-cache-dir -r requirments.txt
 #kopiramo ceo projekat u container
 COPY . .
 
+
+#da skripta moze da se exceutuje u contianer-u za svaki slucaj, +x ->make this file executable
+RUN chmod +x wait-for-mysql.sh
+
+
 #Exposujemo port na kom ce Flask app runovati
-# Set environment variables for Flask
-
-
 EXPOSE 5000
+EXPOSE 5678   
+#debugpy port 5678
 
 # Set entrypoint script to wait for MySQL
 ENTRYPOINT ["/bin/bash", "./wait-for-mysql.sh"]
 
-CMD ["python", "main.py"] 
 
 
 #Step by step ovoga
