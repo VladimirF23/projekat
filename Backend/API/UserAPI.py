@@ -59,6 +59,6 @@ def leaveSubreddit():
 @user_blueprint.route('/user_subreddits', methods=['GET'])
 @jwt_required()
 def fetch_user_subreddits():
-    user_id = get_jwt_identity()
-    #subreddits = getUserSubreddits(user_id)
-    #return jsonify({"joined_subreddits": subreddits}), 200
+    user_id = int(get_jwt_identity())
+    subreddits = getUserSubredditsService(user_id)
+    return jsonify({"users_subreddits": subreddits}), 200

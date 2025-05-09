@@ -30,3 +30,7 @@ except redis.ConnectionError:
     print("Failed to connect to Redis.")
 
 jwt = JWTManager(app)
+
+# Getter to use in other modules
+def get_redis_client():
+    return redis_client

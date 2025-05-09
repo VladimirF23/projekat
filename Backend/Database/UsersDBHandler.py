@@ -155,9 +155,68 @@ def leaveSubreddit(user_id:int, subreddit_id:int):
 
         if err.errno ==1406:
             raise IlegalValuesException("The values are in invalid fromat")
+        elif err.errno == 1452:         #FORENG KEY COINSTRANT
+            raise IlegalValuesException(str(err))
+
+
     except mysql.connector.OperationalError:
         connection.rollback()  
         raise ConnectionException("An connection error occurred while adding joining subreddit.")
     finally:
         cursor.close()
         release_connection(connection)
+
+
+def returUsersSubreddits(user_id:int):
+    querry="""
+    SELECT s.id, s.name, s.description, s.created_by, m.joined_at
+    FROM members m
+    JOIN subreddits s ON m.subreddit_id = s.id
+    WHERE m.user_id = %s;
+    """
+
+    connection = getConnection()
+    cursor = connection.cursor(dictionary=True)
+
+    try:
+        cursor.execute(querry,(user_id,))
+        subreddits = cursor.fetchall()
+        return subreddits
+    except mysql.connector.IntegrityError as err:
+        connection.rollback()
+        if err.errno ==1406:
+            raise IlegalValuesException("The values are in invalid fromat")      
+         
+    except mysql.connector.OperationalError:
+        connection.rollback()  
+        raise ConnectionException("An connection error occurred while adding joining subreddit.")
+
+    finally:
+        cursor.close()
+        release_connection(connection)
+
+#originalno je bila napravljena za createPost ali da ne bih milion konekcija sa DB ovu cu funkciju koristiti za druge stvari
+def is_user_member_of_subreddit(user_id:int, subreddit_id:int)->bool:
+    querry= """
+        SELECT 1 from members WHERE user_id = %s AND subreddit_id = %s
+    """
+    connection = getConnection()
+    cursor = connection.cursor()
+    #SELECT queries do not trigger foreign key checks — they simply try to find a matching row.
+    # ne moram da brinem of Foreign Key constraintu tamo gore u joinovanju JOIN i leavovanju DELETE row
+    try:
+        cursor.execute(querry,(user_id,subreddit_id))
+        result = cursor.fetchone()
+        return result is not None
+    
+    except mysql.connector.IntegrityError as err:
+        connection.rollback()
+        if err.errno ==1406:
+            raise IlegalValuesException("The values are in invalid fromat")     
+    except mysql.connector.OperationalError:
+        connection.rollback()  
+        raise ConnectionException(str(err))
+    finally:
+        cursor.close()
+        release_connection(connection)
+

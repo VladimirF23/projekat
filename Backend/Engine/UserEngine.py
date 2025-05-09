@@ -61,6 +61,11 @@ def joinSubredditService(user_id:int,subreddit_id:int):
 
 def leaveSubredditService(user_id:int, subreddit_id:int):
     leaveSubreddit(user_id,subreddit_id)
+
+
+def getUserSubredditsService(user_id:int):
+    
+    return returUsersSubreddits(user_id)            #db layer
     
 
 

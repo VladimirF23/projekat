@@ -49,7 +49,7 @@ def login():
         redis_client.set(f"access_token:{access_token}","valid",ex=int(timedelta(minutes=15).total_seconds()))  #radis ex uzimamo int u total sekundama !
         redis_client.set(f"refresh_token:{refresh_token}","valid",ex=int(timedelta(days=7).total_seconds()))
 
-        return jsonify({"access_token": access_token, "refresh_token":refresh_token})
+        return jsonify({"message": "User logged in successfully", "access_token": access_token, "refresh_token": refresh_token}), 201
 
     except NotFoundException as e:                              #ako je neuspesan login desice se exception, DB sloj dize taj exception
         return jsonify({"error":str(e)}), 400

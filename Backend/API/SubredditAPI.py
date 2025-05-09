@@ -31,7 +31,7 @@ def create_subreddit():
         #prosledjujemo service layeru
         CreateSubbredit(subbredit_data)
 
-        return jsonify({"message":"Subbredit created successfully"}),201
+        return jsonify({"message":"Subbreddit created successfully"}),201
        
     
     except IlegalValuesException  as e:
