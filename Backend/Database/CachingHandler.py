@@ -4,15 +4,15 @@ from ..CustomException import *
 
 #za cachiranje
 #limit je 50 da ne bi smo sve kljuceve stavili u reddis, i zato ima smisla da ih sortiramo opadajuce po broju membera
-def Fetch_Popular_Subreddits(limit=50):
+def FetchPopularSubredditsCache(limit=50):
     """
     Fetches the list of top `limit` subreddits and their member count from the database.
     """
 
     query = """
             SELECT s.id, s.name, COUNT(m.user_id) as member_count
-            FROM Subreddits s
-            LEFT JOIN Members m ON s.id = m.subreddit_id
+            FROM subreddits s
+            LEFT JOIN members m ON s.id = m.subreddit_id
             GROUP BY s.id, s.name
             ORDER BY member_count DESC
             LIMIT %s

@@ -6,7 +6,7 @@ redis_client = get_redis_client()
 
 
 #smanji radi provere da li radi
-SYNC_INTERVAL = 60 * 60  # 1 sat, 3600 u sekundama definise kolko cesto cemo dodavati u reddis subreddite
+SYNC_INTERVAL = 60*60  # 1 sat, 3600 u sekundama definise kolko cesto cemo dodavati u reddis subreddite
 TTL = 60 * 60 * 2        # 2 sata za TTL u reddis memoriji
 
 #za suggesiton search u search bar-u fokusiracemo se na matchovanje najpopularnijih subbredit-a sa onim sto user u unese
@@ -17,7 +17,7 @@ def UpdatePopularSubreddits_cache_Service():
     """
     while True:
         #ovde su najveziji popularni subrediti
-        subreddits = Fetch_Popular_Subreddits()
+        subreddits = FetchPopularSubredditsCache()
 
         if not subreddits:
             #nema subbredita pa cekamo
@@ -34,7 +34,7 @@ def UpdatePopularSubreddits_cache_Service():
         #prolazimo kroz subreddite i updejtujemo reddis ako je potrebno
 
         for subreddit in subreddits:
-            key = f"{subreddit['id']}|{subreddit['name']}"  # Format key as "id|name"
+            key = f"{subreddit['id']}|{subreddit['name']}"  #formatuje key kao  "id|name"
             db_keys.add(key)
 
             #uzmemo prethodni score i updejtujemo ga sa novim ako je novi veci
@@ -72,7 +72,9 @@ def UpdatePopularSubreddits_cache_Service():
 
             redis_client.delete(*subreddits_to_remove) # <-- Ekplicitno obrisemo key koji vise nije u DB iz redis memorije !
 
+        #u principu redis je thread safe po defaultu jer svaka operacija zadd,zrangebylex je atomicna na reddis serveru i reddis interno handluje konkurentnost i garantuje atomicnost
+        #JEdini mali problem sa moje strane moze biti race condition threada za operaciju UpdatePopularSubreddits_cache_Service  kada se removuje key
+        # dok /suggest cita podatke iz redisa ali to ce usporiti za nekoliko milisekundi sto je okej i prihvatljivo osim ako mi ne treba 100% konz, a mogu ovo dodati kasnije
 
         #spavanje
-
         time.sleep(SYNC_INTERVAL)                        

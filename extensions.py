@@ -18,7 +18,7 @@ redis_client = redis.StrictRedis(
     host="redis",       #ime service
     port=6379,
     password= redis_password, 
-    decode_responses=True  # Automatically decode strings
+    decode_responses=True  # Automatically decode strings da ne budu u byte-ovima
 )
 
 

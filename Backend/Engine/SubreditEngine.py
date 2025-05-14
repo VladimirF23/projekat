@@ -21,6 +21,9 @@ def CreateSubbreditService(subreddit:dict):
     CreateSubbredit(subreddit)
     
 
-
-    
+#ovo API za search poziva kada cache missujemo subreddit
+def FetchPopularSubredditsService(query:str):
+    if len(query)>100:
+        raise IlegalValuesException("Max len of subreddits names are 100 chars")
+    return FetchPopularSubreddits(query)
      

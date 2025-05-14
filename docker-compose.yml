@@ -56,17 +56,36 @@ services:
       MYSQL_DATABASE: ${MYSQL_DB_NAME}
     #ports:                            #zbog sigurnosti ovde necemo exposovati port
     #  - "3307:3306"                   #mapujemo host port 3307 na container port 3306
-    volumes:
-      - mysql_db-data:/var/lib/mysql_db    ## Persistent volume for MySQL data, koristi volume mysql-data da cuva podatke u var/lib/mysql tako kada restartujemo ili obrisemo mysql container dana DB ostane safe
-      - ./dump.sql:/docker-entrypoint-initdb.d/dump.sql   ##odavde ucitavm iz svoje postojece baze kada se inicijalizuje kontjner, tabele i data
-    networks:
+    volumes:                               #mountujemo mysql_db-data moj ka /var... u kontejneru PROVERI gde se nalazi ovaj db-data
+      - mysql_db-data:/var/lib/mysql    #OVO nije mountovanje kao za react iz mog foldera sa host-a vec sa volume-a od dockera pogleda skroz dole sam napisao
+      - ./dump.sql:/docker-entrypoint-initdb.d/dump.sql   #OVO JE MOUNT ./dump.sql -> docker-entrypoint-initdb.d/dump.sql odavde ucitavam iz mog fajla dump.sql gde mi se nalazi code baze i moji dodati podaci da bi se oni inicijalizovali u container-u 
+    networks:                                             
       - backend-network
 
+  react_frontend:
+    build: 
+      context: ./Frontend           #da iz DockerFile
+    volumes:
+    - ./Frontend/my-app:/app        # Mountujemo 'my-app' folder sa mog kompjutera u '/app' unutar container
+    - /app/node_modules             #Izbegavamo overwriting node_modules tokom live promena
+                                    #Ovo cuva da node_modules u container ne bude overwritovan by host machine tokom live promena.
+    command: ["npm", "start"]
+    container_name: react_frontend
+    ports:
+      - "3000:3000"
+    networks:
+      - frontend-network
+
 networks:
-  backend-network:                  #koristimo takodje 2 networka zbog bezbednosti plask ce im moci pristupiti obema ali sa interneta nece moci se backedntu pristupiti
+  backend-network:                  #koristimo takodje 2 networka zbog bezbednosti flask ce im moci pristupiti obema ali sa interneta nece moci se backedntu pristupiti
       driver: bridge                #koristi dockerov bridge network mode -> conteineri na ovom networku mogu izmedju sebe da komunciraju jedni sa drugima izolovani od host machine
   frontend-network:
       driver: bridge
+
+#Ovo dole su volumes definisani u  Docker Compose file. Menadzuje ih i storuje ih Docker outside container-a. 
+#Nisu plain folder mappings !! vec special Docker-managed storage locations. 
+#sto znaci ako removujem container, data u mysql_db-data or redis-data ostaje
+
 volumes:
     mysql_db-data:                  # Named volume for MySQL data
     redis-data:  # Persistent Redis storage

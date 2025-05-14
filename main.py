@@ -17,8 +17,10 @@ app.register_blueprint(search_blueprint)
 
 
 if __name__ =='__main__':
+    #thread pre app startujem da ne bi doslo do ne pokretanja thread-a
+    cacheThread = threading.Thread(target=UpdatePopularSubreddits_cache_Service, daemon=True)
+    cacheThread.start()
+
     app.run(host='0.0.0.0', port=5000,debug=True, threaded=True)#debug ->autoReload ako je promena u python code-u server se automatski restartuje, i debug console koju flask pokaze ako dodje do errora
 
     #za refresh kesiranja useranema i subreddita i njihovih id-a
-    thread = threading.Thread(target=UpdatePopularSubreddits_cache_Service, daemon=True)
-    thread.start()
