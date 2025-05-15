@@ -19,8 +19,10 @@ WORKDIR /app
 COPY ./my-app/package*.json ./
 
 
-#install dependencies
-RUN npm install
+#install dependencies, Redux, react-dom
+RUN npm install --legacy-peer-deps
+
+
 
 #Kopiramo ostali code u image dockera
 COPY ./my-app/ ./

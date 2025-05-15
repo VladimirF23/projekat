@@ -66,10 +66,9 @@ services:
     build: 
       context: ./Frontend           #da iz DockerFile
     volumes:
-    - ./Frontend/my-app:/app        # Mountujemo 'my-app' folder sa mog kompjutera u '/app' unutar container
-    - /app/node_modules             #Izbegavamo overwriting node_modules tokom live promena
-                                    #Ovo cuva da node_modules u container ne bude overwritovan by host machine tokom live promena.
-    command: ["npm", "start"]
+    - ./Frontend/my-app:/app                      # Mountujemo 'my-app' folder sa mog kompjutera u '/app' unutar container
+    - react_node_modules:/app/node_modules        # react_node_modules je docker volume koji ce docker menagovati i koji ce spreciti node_modules da budu overwritovani ako se code promeni lokalno reflectovace se u containeru ali se dependecy nece wipovati
+    command: ["npm", "start"]                   
     container_name: react_frontend
     ports:
       - "3000:3000"
@@ -89,3 +88,5 @@ networks:
 volumes:
     mysql_db-data:                  # Named volume for MySQL data
     redis-data:  # Persistent Redis storage
+    react_node_modules:
+
