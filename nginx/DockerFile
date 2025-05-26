@@ -1,0 +1,20 @@
+# nginx/Dockerfile
+
+FROM nginx:alpine
+
+# kopiramo nas nginx.conf u container
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# necemo ih kopirati posto cemo koristiti volume da mountujemo ih na docker container
+# ako ih ovako kopiram onda postaju deo built image-a, a to ne valja jer  1. ti certificati rade samo na mom kompu
+# 2. Ako neko drugi pulluje image certifikati nece matchovati njihov env, mogu se exposovati privatni kljucevi
+# Forcuje se rebuild ako se certif promene
+# 3. image postane manje portabilan:  Portabilan image  je image koji radi na razlicitim envormentima bez modifikacije
+# 4. Krsi separation of concerns nginx posao je da radi sa trafficom ne da storuje private key-eve ili development certf
+#   Ako bake-ujem certs u image  onda mesam web-server (nginx) i env specific cers (cers)
+# ovaj image treba da ocekuje certifikate da ce biti predati u runtime-u preko volume-a ili secrets
+ 
+#COPY certs/ /etc/nginx/certs/
+
+EXPOSE 80
+EXPOSE 443

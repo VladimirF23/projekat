@@ -1,7 +1,7 @@
 from ..Engine import *
-from flask import Blueprint, request,jsonify
+from flask import Blueprint, request,jsonify,make_response
 from ..CustomException import *
-from flask_jwt_extended import create_access_token,create_refresh_token,jwt_required,get_jwt
+from flask_jwt_extended import create_access_token,create_refresh_token,jwt_required,get_jwt,set_access_cookies,set_refresh_cookies,get_csrf_token,get_jwt_identity,decode_token,unset_jwt_cookies,verify_jwt_in_request
 from datetime import timedelta,datetime
 #iz maina importujemo objekat jwt koji smo kreirali
 
@@ -24,19 +24,15 @@ auth_blueprint  = Blueprint("auth",__name__,url_prefix="/auth")
 def login():
     try:
         user_data = request.get_json()
-
         if not user_data:
             return jsonify({"error":"Invalid JSON format"}),400
         
-
         required_fields =["username", "password"]
         missing_fields =[field for field in required_fields if field not in user_data]
 
         if missing_fields:
             return jsonify({"error":f"Missing fields: {', '.join(missing_fields)}"}),400
         
-
-
         #mysql ce vratiti dict posto sam stavio da kod cursora dict=True
         user =  LoginUserService(user_data)
 
@@ -45,15 +41,112 @@ def login():
         access_token =create_access_token(identity=str(user["id"]),additional_claims={"global_admin":"global_admin" if user["global_admin"] else "user"},expires_delta=timedelta(minutes=15))              #najboljeje id da koristimo za identity jer se on niakd nece menjatim, 
         refresh_token = create_refresh_token(identity=str(user["id"]),additional_claims={"global_admin":"global_admin" if user["global_admin"] else "user"},expires_delta=timedelta(days=7))              #a username se moze menjati
 
+        #JWT_COOKIE_SECURE = True -> kaze Flask-JWT-Extended da JWT cookie  salje SAMO preko HTTPS (secure connection), da ne bi preko HTTP i tako sprecava man i middle attack
+        #JWT_COOKIE_CSRF_PROTECT = True -> drugi CSRF token se pravi (random string razlicit od JWT tokena) i on se MORA slati u custom header-u (X-CSRF token)
+        # sa svakim state changing reqeustom POST,PUT,DELETE etc, AKO CSRF token u headeru ne matchuje ona u cookie-u request se odbija
 
-        redis_client.set(f"access_token:{access_token}","valid",ex=int(timedelta(minutes=15).total_seconds()))  #radis ex uzimamo int u total sekundama !
-        redis_client.set(f"refresh_token:{refresh_token}","valid",ex=int(timedelta(days=7).total_seconds()))
+        # OVO JE BITNO JER:
+        #jer cak i sa HttpOnly, moj browser ce automatski attach cookies na requests — ukljucijuci i one triggere-ovane od attacker (preko malicious <form> ili <script>).
+        #CSRF protection zaustavlja ne-authorizovane komande da budu izvrsene SA strane user-a samo zato sto njegov browser auto-attachuje cookie-je.
 
-        return jsonify({"message": "User logged in successfully", "access_token": access_token, "refresh_token": refresh_token}), 201
+
+
+        #Cuvacu u reddisu ali sa metadatom i JTI kao kljucem da bih mogao lakse u refresh-u 
+        #redis_client.set(f"access_token:{access_token}","valid",ex=int(timedelta(minutes=15).total_seconds()))  #radis ex uzimamo int u total sekundama !
+        #redis_client.set(f"refresh_token:{refresh_token}","valid",ex=int(timedelta(days=7).total_seconds()))
+
+        decoded_access  = decode_token(access_token)
+        decoded_refresh = decode_token(refresh_token)
+
+        access_jti  = decoded_access["jti"]
+        refresh_jti = decoded_refresh["jti"]
+
+        user_metadata_access = {
+                "user_id": user["id"],
+                "username": user["username"],
+                "global_admin": user["global_admin"],
+                "status": "valid",
+                "issued_at": decoded_access["iat"],  # epoch
+                "expires": decoded_access["exp"],     # epoch
+                "type" : "access_token"
+
+        }
+        user_metadata_refresh = {
+                "user_id": user["id"],
+                "username": user["username"],
+                "global_admin": user["global_admin"],
+                "status": "valid",                    #necu menjati ovo samo cu blacklistovati token...
+                "issued_at": decoded_refresh["iat"],  # epoch
+                "expires": decoded_refresh["exp"],     # epoch
+                "type" : "refresh_token"
+
+        }
+
+        #storujemo u reddisu i JTI je kljuc to nam je bolje nego da stavljamo ceo JWT u reddis zato sto preko JTI lako nadjemo tokene po user-u, Revocation support imamo
+        # user moze da ima vise sesija pa cemo storovati na osnovu userID u setu sve JTI keyeve tog usera to nam omogucava lako da :
+        #   sve tokene usera obrisemo, invalidaciju specificne sesije bez efekte na druge
+        #   npr Admin disables user-ov account -> fetchujem sve jti iz user_tokens:{userId} i obrise ih sve
+        #   npr User se odjavi server obrise taj jti i removuje jti iz user_tokens:{userId}
+        #   user_tokens:{userId} => set of {jti1, jti2, jti3, ...}
+        
+
+        #Redis Pipeline Pipelines dozvoljavaju slanje vise komandi ka Redisu odjednom — 
+        #poboljsava performance tako sto smanjujemo round trips — ALI pipeline nema garancije atomicnosti  (ako ne pozovemo multi() unutar pipeline-a).
+        # "atomic operation means that the entire operation is done as a single indivisible step" -> u principu kao transakcija ili se svi komande se izvrse ili ni jedna !
+        
+        #da bih osigurao da se dese sva pistanja u razlicite set-ove 
+
+        pipe = redis_client.pipeline()
+
+        #queu-jem komande na pipe i na execute-u se sve izvrse i tako izbegnem da se delimicno izvrse
+        pipe.setex(f"access_token:{access_jti}",int(timedelta(minutes=15).total_seconds()),json.dumps(user_metadata_access))    #svaki individualno
+        pipe.setex(f"refresh_token:{refresh_jti}",int(timedelta(days=7).total_seconds()),json.dumps(user_metadata_refresh))
+
+        #dodajemo sve id tokena koji pripadaju user-u, ukljucujuci i refresh token
+        pipe.sadd(f"user_tokens:{user['id']}", access_jti, refresh_jti)
+
+        pipe.execute()
+
+        #npr alice je logovan-a sa 2 razlicita device-a (ili sesije) svaka sesija dobija access token i refresh token, (nisam refresh napisao)
+        #  Redis Key	                  Stored Value (simplified JSON)	                                     TTL
+        #access_token:abc123	{ "user_id": "1", "username": "alice", "type": "access_token", ... }	      15 minutes
+        #access_token:ghi789	{ "user_id": "1", "username": "alice", "type": "access_token", ... }          15 minutes
+
+        #set za svakog user-a da mogu da trackujem njihove aktivne tokene
+        #   set       user_id
+        # user_tokens:  1       {abc123, ghi789}
+
+
+        response = make_response(jsonify({"message": "User logged in successfully"}))
+
+        #setujemo access and refresh cookies HTTP only su zbog XSS
+        #JWT token stavljam unutar cookie-a, JWT token se prenosi preko cooki-a i u config-u sam stavio JWT_COOKIE_SECURE =True tj da se koristi HTTPS
+        #i onda HTTPOnly cookies nisu pristupacni JavaScriptu i to stiti JWT token od toga da bude ukraden u XSS napadu
+        #HTTP nije enkriptovan pa svakom na networku npt (WIfi-u) moze da cita i modifikuje traffic ukljucujuci i nas JWT token, login info, i user data
+        #HTTPS enkriptuje komunikaciju izmedju browsera i servera
+        set_access_cookies(response,access_token)
+        set_refresh_cookies(response,refresh_token)
+        #HttpOnly is a cookie attribute that prevents JavaScript from accessing the cookie using document.cookie.
+
+
+        #Uzmemo is accses_token-a (JWT) zaseban CSRF token cookie (JS citljiv), CSRF token se GENERISAO VEC zasebno u JWT tokenu jer smo stavili JWT_COOKIE_CSRF_PROTECT = True
+        csrf_token = get_csrf_token(access_token)
+
+        response.set_cookie(
+            "csrf_token",
+            csrf_token,
+            httponly=False,       #Da bi java script mogla da procita csrf token
+            secure=True,
+            samesite="Lax",     #proveri Lax jos
+            max_age=15 *60    #15 min
+        )
+
+        return response,201
 
     except NotFoundException as e:                              #ako je neuspesan login desice se exception, DB sloj dize taj exception
         return jsonify({"error":str(e)}), 400
-        
+    except redis.RedisError as e:
+        return jsonify({"error":"Redis error","details":str(e)}),500
     except ConnectionException as e:
         return jsonify({"error": "Internal server error", "details": str(e)}), 500   
 
@@ -65,7 +158,7 @@ def login():
 @jwt.token_in_blocklist_loader
 def check_if_token_is_blacklisted(jwt_header, jwt_payload):     #jwt_header sadrzi metadatu od  tokena, algoritam i type, payload sadrzi decodiran body  JWT sa identitetom i CUSTOM CLAIM-ovima
     jti = jwt_payload["jti"]                                    #jti unique id koji se dodeljuje svakom tokenu prilikom kreatije NIJE isto sto i customClaim
-    return redis_client.get(f"blocked_token:{jti}") =="invalid" 
+    return redis_client.get(f"blocked_token:{jti}") =="invalid"   #reddis dekodira odma u string jer sam tako stavio u redis clientu
 #True -> invalid tj nije vise validan token
 #Znaci FLASK-JWT-Extended dekodira token
 #Proveri signature i expiration
@@ -75,23 +168,112 @@ def check_if_token_is_blacklisted(jwt_header, jwt_payload):     #jwt_header sadr
 
 
 
-#u TODO je dodato kako ovo radi silent sa JAVASCRIPTOM
+#u TODO OVO SE MORA POVEZATI SA FRONT-om KOJI CE SLATI ZAHTEV ZA REFRESH-OM KAD DETEKTUJE DA ISTICE VREME ACCESS TOKENA DA SE USER NE BI LOGOUT-OVAO
 @auth_blueprint.route('/refresh',methods=['POST'])
-@jwt_required(refresh=True)
+@jwt_required(refresh=True)             #zahteva validan REFRESH token da bi se pristupilo ovoj funkciji
 def refresh():
     try:
-        identity = get_jwt()["sub"]
-        new_access_token = create_access_token(identity=identity, expires_delta=timedelta(minutes=15))
+        #identity = get_jwt()["sub"]    isto je sto i ovo dole
+
+        #uzima od refresh jwt-a INFO, zato sto samo cookie sa refresh tokenom moze da pristupi ovoj funkciji zbog refresh=True
+        #ne moram da unpackujem jwt token in cooki-a to se automatski uradi sa get_jtw_identity
+
+        identity = get_jwt_identity()   # id user-a
+        claims = get_jwt()              # ceo JWT REFRESH TOKEN-a payload ukljucujuci "jti", "exp", "global_admin", etc.
 
         #potrebno je u reddisu invalidatovati stari token i dodati ovaj novi
-        old_jti = get_jwt()["jti"]  
-        redis_client.set(f"blocked_token:{old_jti}", "invalid", ex=int(timedelta(minutes=15).total_seconds()))  # Expiry should be same as new access token
-        #novi token
-        redis_client.set(f"access_token:{new_access_token}", "valid", ex=int(timedelta(minutes=15).total_seconds()))  # Set expiration time
+        old_refresh_jti  = claims.get("jti")         #unique token id za revocation je koristan
 
-        #opcijonalno updejtovati refresh token ali nema potrebe posto oni dugu traju, pa je fokus na access tokene
-        return jsonify({"access token":new_access_token})
+        #Blacklistujemo stari refresh i stari access token, i radimo refresh token rotation tj izdajemo novi refresh token
 
+        #"In JWT-based authentication, tokens are self-contained — meaning they don’t require server-side sessions to validate them. But this also means:
+        #   If a token hasn’t expired, it’s technically still valid even if the user logs out or it’s supposed to be blocked — unless you track and reject it manually".
+        
+        pipe = redis_client.pipeline()
+
+        old_access_token = request.cookies.get("access_token_cookie")  #Blacklistujemo stari ACCESS token kog vadimo iz cookie-a, default ime
+        if old_access_token:                                            
+            try:
+                decoded_old_access = decode_token(old_access_token)    #decode_token ce biti dovoljno siguran zato sto se prenosi preko HTTP samo i CSFR secure je
+                old_access_jti = decoded_old_access["jti"]
+
+                pipe.setex(f"blocked_token:{old_access_jti}",int(timedelta(minutes=30).total_seconds()),"invalid"
+                )
+            except Exception as err:
+                print(f"Old access token decode failed: {err}")
+                pass  # Istekli or malformed token – ignorisemo
+
+         # Blacklistujemo the old refresh token (optional but safer for rotation)
+        pipe.setex(f"blocked_token:{old_refresh_jti}",int(timedelta(days=7).total_seconds()),"invalid")       
+        
+        
+        # pravimo novi acsess token
+        new_access_token = create_access_token(identity=identity,additional_claims={"global_admin": claims.get("global_admin")},expires_delta=timedelta(minutes=15))
+
+        #novi refresh token pravimo
+        new_refresh_token = create_refresh_token(identity=identity,additional_claims={"global_admin": claims.get("global_admin")},expires_delta=timedelta(days=7))
+
+
+        decoded_new_access  = decode_token(new_access_token)
+        decoded_new_refresh = decode_token(new_refresh_token)
+
+        new_jti_access = decoded_new_access["jti"]
+        new_jti_refresh = decoded_new_refresh["jti"]
+
+        # Metadata user-a
+        user_metadata_access = {
+            "user_id": identity,
+            "username": claims.get("username", ""),  # optional: fetch again if needed
+            "global_admin": claims.get("global_admin"),
+            "status": "valid",
+            "issued_at": decoded_new_access["iat"],
+            "expires": decoded_new_access["exp"]
+        }
+
+        user_metadata_refresh = {
+            "user_id": identity,
+            "username": claims.get("username", ""),  # optional: fetch again if needed
+            "global_admin": claims.get("global_admin"),
+            "status": "valid",
+            "issued_at": decoded_new_refresh["iat"],
+            "expires": decoded_new_refresh["exp"]
+        }
+
+        # Store new access token by JTI
+        pipe.setex(f"access_token:{new_jti_access}",int(timedelta(minutes=15).total_seconds()),json.dumps(user_metadata_access))
+        pipe.setex(f"refresh_token:{new_jti_refresh}",int(timedelta(days=7).total_seconds()),json.dumps(user_metadata_refresh))
+    
+
+        # dodajemo u set id usera njegov jti
+        pipe.sadd(f"user_tokens:{identity}", new_jti_access, new_jti_refresh)
+
+
+        #executujemo sve reddis komande atomicno 
+        pipe.execute()
+
+        #novi accses stavljamo u secure cookie
+        response = make_response(jsonify({"message": "Access token refreshed"}))
+        set_access_cookies(response, new_access_token)
+        set_refresh_cookies(response,new_refresh_token)
+
+
+        # Regenerisemo i setujemo new CSRF token iz new_access tokena
+        csrf_token = get_csrf_token(new_access_token)
+
+        response.set_cookie(
+            "csrf_token",
+            csrf_token,
+            httponly=False,     #da moze JS da pristupi csrf
+            secure=True,
+            samesite="Lax",
+            max_age=15 * 60
+        )        
+        
+        return response
+    
+    #mora pre genericno exception-a ovaj redis exception
+    except redis.RedisError as e:
+        return jsonify({"error":"Redis error","details":str(e)}),500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -107,26 +289,81 @@ def refresh():
 #zbog bolje modularnosti i organizovanosti, za logout POST /auth/logout
                                  
 @auth_blueprint.route('/logout',methods=['POST'])
-@jwt_required()                                 #provera da li je jwt token prisutan u headeru/cookiju,proverava potpis i da li je nesto radjeno sa njim, i provera da nije istekao token
+@jwt_required()                              #provera da li je jwt token prisutan u headeru/cookiju,proverava potpis i da li je nesto radjeno sa njim, i provera da nije istekao token
 def logout():                               #takoddje raiseuje error ako nema tokena,token je invalid,expired ili revokovan
     try:
-        #uzmemo trenutni jti
         jti= get_jwt()["jti"]
-        exp = get_jwt()["exp"]  # da dinamicki postavimo kolko ce u radisu (blocklisti) biti token nako sto se logoutuje, postavimo da je timeout trenutno kolko mu je ostalo od original.
-        
+        exp = get_jwt()["exp"]  # da dinamicki postavimo kolko ce u redisu (blacklist) biti token nako sto se logoutuje, postavimo da je timeout trenutno kolko mu je ostalo od original.
+        identity = get_jwt_identity()   #vraca id u string formatu
+
+        #VAZNO je namestimo ttl za blacklist da se ne bi desilo da blacklist istekne a token TTL nastavi da postoji onda je presta da bude blacklistovan ! 
+
         if not jti or not exp:
             return jsonify({"error":"Invalid JWT structure"}),400
 
         ttl = int(exp - datetime.utcnow().timestamp())
+        if ttl < 0:
+            ttl=1       #zbog clock skew, imamo sat na serveru i JWT validatora ako slucajn sad kod JWT kasni za 5 sekundi, ako dobijemo negativan ttl da ne bude error u redisu
 
-        #pri logoutu moramo user-a invalidatovati njegov token tako sto ga dodamo na blacklistu
-        redis_client.set(f"blocked_token:{jti}","invalid",ex=int(ttl))                    
-        #i ovde dodajemo expiration time da nam ne bi za dzabe zauzimamo memoriju, posto se RADIS je inmemory database i sve se cuva u RAM-u 
-        #pa nema potrebe cuvari blacklistovane tokene neograniceno jer ce zauzeti svu memoriju
-        #Avoidujemo memory leaks
+        pipe = redis_client.pipeline()
+        pipe.multi()
+
+        #pri logout-u usera blaclistujemo njegov accsess token i refresh token, bolje je blacklistovanj-e nego da ih brisem u access_token i refresh_token  reddis-u
+        # jer bi bilo onda inconsistency ako konkrutetno app pokusa da refresh-uje i validatuje tokene, JWT_required ce izbeci race conditione jel prvo provera blacklist pa tek dozvoljava funk da se izvrsi
 
 
-        return jsonify({"message":"Logged out successfully"}),200
+        pipe.setex(f"blocked_token:{jti}", ttl, "invalid")      #dodamo expiration
+ 
+        #iz seta aktivnih access tokena brisemo acsess tokena od trenutne sesije user-a koja se odjavljuje
+        pipe.srem(f"user_tokens:{identity}", jti)
+
+        #blacklistovanje REFRESH tokena
+
+
+        #refresh_token = request.cookies.get('refresh_token_cookie')
+        #refresh_decoded = decode_token(refresh_token)      ovo je security risk jer ne proverava signature, da li je token expire-ovao, i da nije bilo tamper-ovanja sa njim
+        #napadac moze da forguje token ili expiro-van refresh token i mi bi dobili kao da je realan token
+
+         # Ovo resetuje JWT context internally, posle ovoga ce call get_jwt() ce se odnositi na refresh token, mogu TODO debaguj i proveri da li je zaista refresh_token ima u metadati
+        verify_jwt_in_request(refresh=True)  # <-- proverava refresh token, raises error if invalid
+
+        #get_jwt() se sada odnosi na refresh token
+        refresh_jwt = get_jwt()
+
+        refresh_jti = refresh_jwt["jti"]
+        refresh_exp = refresh_jwt["exp"]
+
+        if not refresh_jti or not refresh_exp:
+            return jsonify({"error":"Invalid REFRESH JWT structure"}),400
+
+        ttl_reffresh = int (refresh_exp - datetime.utcnow().timestamp())
+        if ttl_reffresh<0:
+            ttl_reffresh =1
+    
+        pipe.setex(f"blocked_token:{refresh_jti}", ttl_reffresh, "invalid")
+        #refresh token ne nalazi kod istog user-a, samo drugaciji jti ima
+        pipe.srem(f"user_tokens:{identity}", refresh_jti)
+
+        
+
+        pipe.execute()
+
+
+        response = make_response(jsonify({"message": "Logged out successfully"}), 200)
+        unset_jwt_cookies(response)  # ovo ce removati access and refresh cookies
+
+        #brisemo i refresh zato sto "Leaving the refresh cookie means the client can still request a new access token silently via POST /refresh."
+        # ako se ne obrise onda "client will  be able to refresh silently, which usually defeats the purpose of logging out."
+
+        #Ovo je kad admin banuje user-a ili sa LOGOUT out of everything
+        # for jti in redis_client.smembers(f"user_tokens:{identity}"):
+        #    redis_client.setex(f"blocked_token:{jti.decode()}", 7 * 24 * 3600, "invalid")  # 7 days
+        #redis_client.delete(f"user_tokens:{identity}")
+
+        #brisemo CSRF
+        response.delete_cookie("csrf_token", secure=True, samesite="Lax")
+
+        return response
     
     except redis.RedisError as e:
         return jsonify({"error":"Redis error","details":str(e)}),500
@@ -150,3 +387,8 @@ def admin_only():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+#ADMIN FUNCTION TO BAN USER TODO
+#Concurrency safety:
+
+#logout all Since you’re tracking per-user sets, you may eventually want to wrap any mass revocation logic (e.g. logout-all) in a transaction too.

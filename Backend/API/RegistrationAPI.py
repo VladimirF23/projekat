@@ -1,8 +1,10 @@
 from ..Engine import *
-from flask import Blueprint, request,jsonify
+from flask import Blueprint, request,jsonify,make_response
 from ..CustomException import *
-from flask_jwt_extended import create_access_token,create_refresh_token,jwt_required,get_jwt
+from flask_jwt_extended import create_access_token,create_refresh_token,jwt_required,get_jwt,decode_token,set_access_cookies,set_refresh_cookies,get_csrf_token
 from datetime import timedelta,datetime
+
+import redis
 #metoda je post jer POST drzi sensitive data (email/password) u request body a on nije logovan u browser history
 #Get exposuje parametre u URL sto nije sigurno
 registration_blueprint = Blueprint('registration',__name__,url_prefix='/registration')
@@ -35,16 +37,72 @@ def register_user():
         access_token =create_access_token(identity=str(user["id"]),additional_claims={"global_admin":"global_admin" if user["global_admin"] else "user"},expires_delta=timedelta(minutes=15))              #najboljeje id da koristimo za identity jer se on niakd nece menjatim, 
         refresh_token = create_refresh_token(identity=str(user["id"]),additional_claims={"global_admin":"global_admin" if user["global_admin"] else "user"},expires_delta=timedelta(days=7))              #a username se moze menjati
 
+        decoded_access  = decode_token(access_token)
+        decoded_refresh = decode_token(refresh_token)
 
-        redis_client.set(f"access_token:{access_token}","valid",ex=int(timedelta(minutes=15).total_seconds()))  #radis ex uzimamo int u total sekundama !
-        redis_client.set(f"refresh_token:{refresh_token}","valid",ex=int(timedelta(days=7).total_seconds()))
+        access_jti  = decoded_access["jti"]
+        refresh_jti = decoded_refresh["jti"]
 
-        return jsonify({"message": "User registered successfully", "access_token": access_token, "refresh_token": refresh_token}), 201
+        user_metadata_access = {
+                "user_id": user["id"],
+                "username": user["username"],
+                "global_admin": user["global_admin"],
+                "status": "valid",
+                "issued_at": decoded_access["iat"],  # epoch
+                "expires": decoded_access["exp"],     # epoch
+                "type" : "access_token"
+
+        }
+        user_metadata_refresh = {
+                "user_id": user["id"],
+                "username": user["username"],
+                "global_admin": user["global_admin"],
+                "status": "valid",                    #necu menjati ovo samo cu blacklistovati token...
+                "issued_at": decoded_refresh["iat"],  # epoch
+                "expires": decoded_refresh["exp"],     # epoch
+                "type" : "refresh_token"
+
+        }
+
+
+
+
+        pipe = redis_client.pipeline()
+
+        #queu-jem komande na pipe i na execute-u se sve izvrse i tako izbegnem da se delimicno izvrse
+        pipe.setex(f"access_token:{access_jti}",int(timedelta(minutes=15).total_seconds()),json.dumps(user_metadata_access))    
+        pipe.setex(f"refresh_token:{refresh_jti}",int(timedelta(days=7).total_seconds()),json.dumps(user_metadata_refresh))
+
+        #dodajemo sve id tokena koji pripadaju user-u, ukljucujuci i refresh token
+        pipe.sadd(f"user_tokens:{user['id']}", access_jti, refresh_jti)
+
+        pipe.execute()
+
+        #novi accses stavljamo u secure cookie
+        response = make_response(jsonify({"message": "User Registered in successfully"}))
+        set_access_cookies(response, access_token)
+        set_refresh_cookies(response,refresh_token)
+
+
+        #Uzmemo is accses_token-a (JWT) zaseban CSRF token cookie (JS citljiv), CSRF token se GENERISAO VEC zasebno u JWT tokenu jer smo stavili JWT_COOKIE_CSRF_PROTECT = True
+        csrf_token = get_csrf_token(access_token)
+
+        response.set_cookie(
+            "csrf_token",
+            csrf_token,
+            httponly=False,     #da moze JS da pristupi csrf
+            secure=True,
+            samesite="Lax",
+            max_age=15 * 60
+        )        
+
+        return response, 201
 
 
     except IlegalValuesException  as e:
         return jsonify({"error":str(e)}), 400
-    
+    except redis.RedisError as e:
+        return jsonify({"error":"Redis error","details":str(e)}),500 
     except Exception as e:
         return jsonify({"error": "Internal server error", "details": str(e)}),500
     

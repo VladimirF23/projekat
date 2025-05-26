@@ -24,7 +24,7 @@ const axiosInstance = axios.create({
 
 
 //funkcija za set-ovanje tokena posle login-a i register
-export const setAuthToken = (token) =>{
+export const setAuthTokenAxios = (token) =>{
     if (token){                                                                     //ako postoji token (posle login-a i registera imati ) svakom requestu se dodaje  JWT token
         axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${token}`;
         
@@ -39,3 +39,5 @@ export const setAuthToken = (token) =>{
 
 
 }
+
+export default axiosInstance;

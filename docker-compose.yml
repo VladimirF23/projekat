@@ -75,6 +75,21 @@ services:
     networks:
       - frontend-network
 
+  nginx:
+    build:
+      context: ./nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - flask_app
+      - react_frontend
+    networks:
+      - frontend-network
+    volumes:
+      - ./nginx/certs:/etc/nginx/certs:ro   #ovako je najbolje zbog sigurnosti, napisao sam u nginx docker file zato da ne koristim COPY tih cert, ro ->read only
+
+
 networks:
   backend-network:                  #koristimo takodje 2 networka zbog bezbednosti flask ce im moci pristupiti obema ali sa interneta nece moci se backedntu pristupiti
       driver: bridge                #koristi dockerov bridge network mode -> conteineri na ovom networku mogu izmedju sebe da komunciraju jedni sa drugima izolovani od host machine
