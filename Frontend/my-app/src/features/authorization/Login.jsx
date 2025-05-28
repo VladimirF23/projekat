@@ -6,7 +6,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { loginUser } from "../../api/authApi";
 
 //Reduceri za redux store state
-import { loginSuccess,loginFailure } from "./AuthSlice";
+import { loginSuccess,loginFailure } from "/AuthSlice";
 
 //da bi axios-os mogao da salje u header-u token user-a ako je logovan uspesno
 import { setAuthTokenAxios } from '../../api/axiosInstance';

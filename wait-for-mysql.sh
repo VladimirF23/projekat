@@ -21,17 +21,23 @@ while ! mysqladmin ping -h"$MYSQL_HOST" -P"$MYSQL_PORT" --silent; do
 done
 echo "✅ MySQL is up."
 
-#echo "⏳ Waiting for Redis to be ready at $REDIS_HOST:$REDIS_PORT..."
 
-#Cekamo Redis to respond
-# while ! redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ping | grep -q PONG; do
-#     sleep 2
-# done
-# echo "✅ Redis is up."
 
 # Startujemo Flask app
 echo "🚀 Starting Flask app..."
 #exec python main.py
+
+#exec je najbitniji ovde jer ce zameniti trenutni shell process wait-for-mysql.sh sa novim procesom python -m debugpy...
+
+#python -m debugpy --listen 0.0.0.0:5678 --wait-for-client main.py -> Ovako se pokrece flask aplikacija, 
+# i ja je launchujem sa debugpy za remote debuging containera u VScode-u
+#listen govori debugpy da slusa za debuger-om na portu 5678 
+# --wait-for client -> govori debugpy da pauzira pokretanje main.py dok debuger client VSCode-a se ne konektuje na njega
+
 exec python -m debugpy --listen 0.0.0.0:5678 --wait-for-client main.py              #debuger ima fora zasto mora ovako a ne preko onog  u main-u sto ceka kao
+
+
+
+
 
 #prvo manuelno sa docker-compose up da napravis containere ako si removovao i onda pozoves debug onaj preko VS-a e tada moze da se debuguje

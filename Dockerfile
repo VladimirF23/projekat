@@ -28,7 +28,13 @@ EXPOSE 5000
 EXPOSE 5678   
 #debugpy port 5678
 
-# Set entrypoint script to wait for MySQL
+#Entrypoin u DockerFile-u definise default komandu koju izvrsava kontejner koji je pokrenut iz image-a (image-a kog pravi ovaj DockerFile)
+#/bin/bash je intepreter za skriptu, ./wait-for-mysql.sh  je skripta koja se izvrsava
+#u wait-for-mysql.sh se ceka da se mysql kontejner startuje i da bude SPREMAN za primanje konekcija
+#i u wait-for-mysql.sh se pokrece flask aplikacija preko komande 'exec python -m debugpy --listen 0.0.0.0:5678 --wait-for-client main.py' 
+
+
+# Set entrypoint script to wait for MySQL, 
 ENTRYPOINT ["/bin/bash", "./wait-for-mysql.sh"]
 
 

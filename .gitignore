@@ -159,8 +159,11 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 dump.sql
+devinfoJWT.env
+devinfoDocker.env
 Dbconfig.json
-.env
+Backend/Database/devInfo.env
+*.env
 configJWT.py
 
 # Ignore SSL certificates and private keys
