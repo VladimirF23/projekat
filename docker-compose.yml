@@ -28,9 +28,9 @@ services:
     working_dir: /usr/src/app      # Ensure Flask runs from this directory
     entrypoint: ["/bin/bash", "./wait-for-mysql.sh"]   # Use wait script before running Flask, za ovo mi je trebalo 3 dana, depends garantuje order po kom se pokrece a ne garantuje je da je mysql skroz spreman za primanje konekc...
     #ovaj entryPoint ne mora da se napise jer je vec napisan u DockerFile-u, ali cisto da se zna sta se desava sam ostavio kad se gleda docker-compose
-    networks:              #dozvoljava komunikaciju izmedju kontejnera
-      - frontend-network
-      - backend-network
+    networks:              
+      #- frontend-network  dobijace preko nginx-a zahteve, ovako je sigurnije jer flask-app nije direktno dostupan preko interneta i ovako ce isto u production-u biti
+      - backend-network   
 
 
   redis:
@@ -62,6 +62,8 @@ services:
     networks:                                             
       - backend-network
 
+
+  #React frontend ce se IZBACITI za production posto ce nginx servovati  pre-built static fajlove iz mount-ovanog volume
   react_frontend:
     build: 
       context: ./Frontend           #da iz DockerFile
@@ -73,8 +75,7 @@ services:
     ports:
       - "3000:3000"
     networks:
-      - frontend-network
-
+      - frontend-network                         
   nginx:
     build:
       context: ./nginx
@@ -82,10 +83,11 @@ services:
       - "80:80"
       - "443:443"
     depends_on:
-      - flask_app
+      - flask-app
       - react_frontend
     networks:
       - frontend-network
+      - backend-network
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro # mount-ujemo  config za development
       - ./nginx/certs:/etc/nginx/certs:ro   #ovako je najbolje zbog sigurnosti, napisao sam u nginx docker file zato da ne koristim COPY tih cert, ro ->read only

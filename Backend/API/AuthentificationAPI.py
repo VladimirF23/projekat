@@ -19,8 +19,11 @@ except redis.ConnectionError:
 auth_blueprint  = Blueprint("auth",__name__,url_prefix="/auth")
 
 @auth_blueprint.route('/login',methods=['POST'])
-#metoda je post jer POST drzi sensitive data (email/password) u request body a on nije logovan u browser history
-#Get exposuje parametre u URL sto nije sigurno
+# metoda je post jer POST drzi sensitive data (email/password) u request body a on nije logovan u browser history #Get exposuje parametre u URL sto nije sigurno
+# primaran posao logina kada koristimo HttpOnlyCookie je da setuje accsess i refresh tokene kao Cooki-e koje JS ne moze da pristupi
+# i vraca se poruka Uspesan login ali se ne vraca JWT ili user data Browser ce dobiti Set-Cookie headers i automatski store-vati HttpOnly cookie i JS citljiv CSRF cookie
+# Front end ne moze da procita JWT cookie zato sto su HttpOnly i ne moze da vidi info o user-u (username,id,global_admin)
+# Odma nakon uspesnog logina na frontu se salje request na API da se za sada loginovanog user-a posalje info da bi React mogao to da prikazuje na UI-u
 def login():
     try:
         user_data = request.get_json()
@@ -141,6 +144,7 @@ def login():
             max_age=15 *60    #15 min
         )
 
+        #login vraca Cookie i CSRF i JS nece moci da 
         return response,201
 
     except NotFoundException as e:                              #ako je neuspesan login desice se exception, DB sloj dize taj exception
@@ -257,17 +261,18 @@ def refresh():
         set_refresh_cookies(response,new_refresh_token)
 
 
+        # Ne treba ovo dole set_access_cookies ce automatski postaviti csrf_access_token
         # Regenerisemo i setujemo new CSRF token iz new_access tokena
-        csrf_token = get_csrf_token(new_access_token)
+        # csrf_token = get_csrf_token(new_access_token)
 
-        response.set_cookie(
-            "csrf_token",
-            csrf_token,
-            httponly=False,     #da moze JS da pristupi csrf
-            secure=True,
-            samesite="Lax",
-            max_age=15 * 60
-        )        
+        # response.set_cookie(
+        #     "csrf_token",
+        #     csrf_token,
+        #     httponly=False,     #da moze JS da pristupi csrf
+        #     secure=True,
+        #     samesite="Lax",
+        #     max_age=15 * 60
+        # )        
         
         return response
     
@@ -392,3 +397,41 @@ def admin_only():
 #Concurrency safety:
 
 #logout all Since you’re tracking per-user sets, you may eventually want to wrap any mass revocation logic (e.g. logout-all) in a transaction too.
+
+
+
+#Ovo se automatski poziva nakon uspesnog logina sa strane front-a i ovako osiguravam da login imao single responsability a to je set-ovanje access/refresh/csrf tokena
+#pogledaj u notepadu sam objasnio zasto ovako 
+@auth_blueprint.route('/me', methods=['GET'])
+@jwt_required()
+def get_current_user_details():
+    try:
+        #current_user_id = get_jwt_identity() 
+        claims = get_jwt()                          # Get all claims from the access token
+
+        
+        # Meta data za access tokene se cuva u Redisu
+        # Uzecemo tu metadatu iz redis-a da bi imali sveze podatke 
+        # ***Ovako izbegavamo da zovemo MySQL DB za podatke svakog usera*** 
+        access_jti = claims.get("jti")
+        user_metadata_str = redis_client.get(f"access_token:{access_jti}")
+
+        if not user_metadata_str:
+            # Ovaj slucaj se nece desiti ako token validan i nije  blacklistovan
+            # Ali za saki slucaj ako je revokovan ili istekao iz Redis-a
+            # A JWT-Extended nekako uspeo da ga validira (nvrjm da ce se desiti)
+            return jsonify({"error": "User data not found in Redis or session invalid"}), 404
+
+        user_metadata = json.loads(user_metadata_str)
+
+        # Uzmemo podatke iz acces token-a
+        user_details = {
+            "id": user_metadata.get("user_id"),
+            "username": user_metadata.get("username"),
+            "global_admin": user_metadata.get("global_admin") == "global_admin" #pazi u string ga convertujem ovde ! 
+        }
+
+        return jsonify(user_details), 200
+
+    except Exception as e:
+        return jsonify({"error": "Failed to retrieve user details", "details": str(e)}), 500

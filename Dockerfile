@@ -2,7 +2,23 @@
 FROM  python:3.9-slim
 
 
-#wokring directory u containeru
+# TODO Za production procitaj u knjizi kako se koristi multi-stage build  (vise FROM instrukcija)
+# da bi se znatno smanjila velicina image-a i da production zauzima najmanje i koristi samo stvari potrebne za rad aplikacije u productionu
+# 1.Single stage build:  
+#    sadrzace stvari sve instalirane ili generisane tokom build procesa  kao sto stu ako je C++ image u pitanje : compileri-i (Gcc)
+#    Build tools (make,cmake,npm,pip), Source code, Sve ovo povecava povrsinu za napad i povecava potencijalne vulnerbilities
+# 2. Multi stage build: (base stage, build stage, production stage)
+#    - Manja slika (glavna prednost) -> kopiramo samo finalne artifiakte iz build stage-a (compiled binary,minified JavaScript, insalirane Python package)
+#          u  minimalan final (production) stage, svi build tools, dev dependencies,source code su odbaceni, i ovo drasticno smanjuje SLIKU
+#    - Manji surface za napad -> nepotrebni tool-ovi i library-iji nisu u final image-u i tako smanjuje poten. vulnerabilities 
+#    - Brzi Image Transfer/Deplyotment 
+#    - Bolje Cachiranje      -> Svaki stage se moze kesirati nezavisno Ako se samo source code promeni Docker mozda samo treba da rebuild aplikaciju
+#                               u build stage-u i onda  da je kopira koristeci ponovo cached layer-e za  environment setup
+#    - Seperaiton of concern -> DockerFile podeli build proces od runtime enviorment-a
+#    - Flexibilnost          -> Razlicite base image mozemo koristiti u stage-ovima builda od ubuntu latest za build, i mali apline-latest ili scracth(prazan konteiner) za runtime
+
+
+# Wokring directory u containeru
 WORKDIR /usr/src/app
 # Install system dependencies ovo nam treba za mysql
 RUN apt-get update && apt-get install -y default-mysql-client && rm -rf /var/lib/apt/lists/*
@@ -15,7 +31,9 @@ COPY requirements.txt ./
 #instaliramo sve dependency u requirmentu koje smo nap
 RUN pip install --no-cache-dir -r requirements.txt
 
-#kopiramo ceo projekat u container
+#kopiramo ceo code projekat u container, Ovde je ovaj copy postavljen jer se ovaj code cesto menja i onda se desava cache miss, i onda se sve naredne instrukcije
+#FROM, RUN,COPY,CMD,Entrpoinyt itd (koje prave layer-e)..., takodje cache missuju sto nam usporava build-ovanje image-a
+#CILJ JE DA STVARI KOJE SE CESTO NE MENJAJU PISEMO TAKO DA SE CACHE-hituju a ove stvari koje se cesto menjaju da stavljamo ispod
 COPY . .
 
 

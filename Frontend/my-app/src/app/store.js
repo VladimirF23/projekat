@@ -2,7 +2,8 @@
 //za redux 
 
 import {configureStore} from '@reduxjs/toolkit';
-import authReducer from './features/authorization/AuthSlice';
+import authReducer from '../features/authorization/authSlice'; //ovo importuje default default export is AuthSlice-a tj ovo export default authSlice.reducer
+// authReducer = authSlice.reducer
 /*
 reducer je funkcija koja prima trenutno stanje i akciju i vraca novo stanje
 - opisuju kako se stanje menja u zavisnosti od akcije
