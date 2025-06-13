@@ -45,7 +45,7 @@ const Login = () =>{
 
             //calujemo login AXIOS-a koji salje API-u, Ovo ce set-ovati HTTPOnly cookies 
             await loginUser(credentials)
-            const userDetailsResponse = await axiosInstance.get('/api/user/me'); // novi API call treba samo da dodam   
+            const userDetailsResponse = await axiosInstance.get('/api/auth/me'); // novi API call treba samo da dodam   
             const userDetails = userDetailsResponse.data;
             dispatch(loginSuccess(userDetails)); // Dispatch-ujemo ka Redux-u sa podacima od user-a
             navigate('/'); //nazad na home page ga redirectujemo

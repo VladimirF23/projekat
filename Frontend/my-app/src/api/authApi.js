@@ -38,7 +38,7 @@ export const refreshToken = async() =>{
     try{
         // Flask-ov /auth/refresh je POST request treba mu validan refresh token cookie
         // i trebace mu validan CSRF token iz JS readable cookie-a
-        const response = await axiosInstance.post('/api/auth/refresh');
+        const response = await axiosInstance.post('/api/auth/refresh',{},{withCredentials:true});
         return response.data;       //dobicemo samo poruku da su postavljeni novi cookie
 
     }catch(error)

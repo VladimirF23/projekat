@@ -131,18 +131,20 @@ def login():
         set_refresh_cookies(response,refresh_token)
         #HttpOnly is a cookie attribute that prevents JavaScript from accessing the cookie using document.cookie.
 
+        # NE TREBA OVO zato sto set_access_cookies automatski pravi csrf_access_cookie u jwt configu samo cu namestiti da mu ime bude csrf_cookie
+        # posto mi u frontu ga tako cita
+        
+        # Uzmemo is accses_token-a (JWT) zaseban CSRF token cookie (JS citljiv), CSRF token se GENERISAO VEC zasebno u JWT tokenu jer smo stavili JWT_COOKIE_CSRF_PROTECT = True
+        # csrf_token = get_csrf_token(access_token)
 
-        #Uzmemo is accses_token-a (JWT) zaseban CSRF token cookie (JS citljiv), CSRF token se GENERISAO VEC zasebno u JWT tokenu jer smo stavili JWT_COOKIE_CSRF_PROTECT = True
-        csrf_token = get_csrf_token(access_token)
-
-        response.set_cookie(
-            "csrf_token",
-            csrf_token,
-            httponly=False,       #Da bi java script mogla da procita csrf token
-            secure=True,
-            samesite="Lax",     #proveri Lax jos
-            max_age=15 *60    #15 min
-        )
+        # response.set_cookie(
+        #     "csrf_token",
+        #     csrf_token,
+        #     httponly=False,       #Da bi java script mogla da procita csrf token
+        #     secure=True,
+        #     samesite="Lax",     #proveri Lax jos
+        #     max_age=15 *60    #15 min
+        # )
 
         #login vraca Cookie i CSRF i JS nece moci da 
         return response,201
@@ -325,48 +327,52 @@ def logout():                               #takoddje raiseuje error ako nema to
         #blacklistovanje REFRESH tokena
 
 
-        #refresh_token = request.cookies.get('refresh_token_cookie')
-        #refresh_decoded = decode_token(refresh_token)      ovo je security risk jer ne proverava signature, da li je token expire-ovao, i da nije bilo tamper-ovanja sa njim
-        #napadac moze da forguje token ili expiro-van refresh token i mi bi dobili kao da je realan token
+        # Uzmemo refresh token iz cookie-a, ovo je bio prethodni problem sa logout-om jer sam preko ovog verift_jwt_in_request...
+        # ali ga necu verifikovati preko verify_jwt_in_request(refresh=True)
+        # jer @jwt_required() iznad vec brine o autenticnosti
+        # Njegova validacija ce se desiti u okviru pipe.setex ako je prisutan
+        refresh_token_cookie_value = request.cookies.get('refresh_token_cookie')
 
-         # Ovo resetuje JWT context internally, posle ovoga ce call get_jwt() ce se odnositi na refresh token, mogu TODO debaguj i proveri da li je zaista refresh_token ima u metadati
-        verify_jwt_in_request(refresh=True)  # <-- proverava refresh token, raises error if invalid
+        if refresh_token_cookie_value: # provera da li postoji uopste refresh_token
+            try:
+                # Dekodiramo refresh token (Flask-JWT-Extended ovo radi sigurno proverava potpis)
+                # Nema potrebe za 'verify_jwt_in_request' ovde jer je cilj samo blacklistovanje
+                # a ne autorizacija pristupa ruti
+                decoded_refresh = decode_token(refresh_token_cookie_value)
+                refresh_jti = decoded_refresh["jti"]
+                refresh_exp = decoded_refresh["exp"]
 
-        #get_jwt() se sada odnosi na refresh token
-        refresh_jwt = get_jwt()
+                ttl_refresh = int(refresh_exp - datetime.utcnow().timestamp())
+                if ttl_refresh < 0:
+                    ttl_refresh = 1 # Minimalni TTL
 
-        refresh_jti = refresh_jwt["jti"]
-        refresh_exp = refresh_jwt["exp"]
+                pipe.setex(f"blocked_token:{refresh_jti}", ttl_refresh, "invalid")
+                pipe.srem(f"user_tokens:{identity}", refresh_jti) # Ukloni JTI refresh tokena iz seta korisnika
+            except Exception as e:
+                # Loguj grešku ako dekodiranje refresh tokena ne uspe (npr. istekao je ranije, tampered)
+                print(f"Error decoding or blacklisting refresh token during logout: {e}")
+                # Nastavi dalje, jer je glavni cilj logouta postignut (access token je blacklistovan)
 
-        if not refresh_jti or not refresh_exp:
-            return jsonify({"error":"Invalid REFRESH JWT structure"}),400
 
-        ttl_reffresh = int (refresh_exp - datetime.utcnow().timestamp())
-        if ttl_reffresh<0:
-            ttl_reffresh =1
-    
-        pipe.setex(f"blocked_token:{refresh_jti}", ttl_reffresh, "invalid")
-        #refresh token ne nalazi kod istog user-a, samo drugaciji jti ima
-        pipe.srem(f"user_tokens:{identity}", refresh_jti)
 
-        
 
-        pipe.execute()
+        #izvrsavamo reddis komande atomicno
+        pipe.execute()      
 
 
         response = make_response(jsonify({"message": "Logged out successfully"}), 200)
-        unset_jwt_cookies(response)  # ovo ce removati access and refresh cookies
+        unset_jwt_cookies(response)  #OVO JE NAJBITNIJE 
+                                     #Ovo šalje instrukcije browser-u da obriše
+                                     # HttpOnly kolačiće (access_token_cookie, refresh_token_cookie, csrf_access_token, csrf_refresh_token)
 
-        #brisemo i refresh zato sto "Leaving the refresh cookie means the client can still request a new access token silently via POST /refresh."
-        # ako se ne obrise onda "client will  be able to refresh silently, which usually defeats the purpose of logging out."
+        # brisemo i refresh zato sto: Ostavljanje refresh cookie znaci da client moze da zatrazi novi acces cookie token silently preko POST /refresh
+        # ako se ne obrise onda: client moze da refresh-uje silently, sto onda ponistava logging out
 
         #Ovo je kad admin banuje user-a ili sa LOGOUT out of everything
         # for jti in redis_client.smembers(f"user_tokens:{identity}"):
         #    redis_client.setex(f"blocked_token:{jti.decode()}", 7 * 24 * 3600, "invalid")  # 7 days
         #redis_client.delete(f"user_tokens:{identity}")
 
-        #brisemo CSRF
-        response.delete_cookie("csrf_token", secure=True, samesite="Lax")
 
         return response
     

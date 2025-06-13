@@ -30,6 +30,8 @@ const axiosInstance = axios.create({
     headers:{
         'Content-Type': 'application/json',          //govori serveru da ce axios slati podatke u JSON formatu
     },
+    withCredentials:true,
+
 })
 
 // REQUEST interceptor
@@ -38,10 +40,13 @@ const axiosInstance = axios.create({
 axiosInstance.interceptors.request.use(
     (config) =>{
         //procitamo CSRF token iz csrf_token cookie-a
-        const csrf_token = Cookies.get('csrf_token');
+        const csrf_token = Cookies.get('csrf_access_token');
         
-        //ako postoji csrf token i state changing je metoda dodaj ga u header
-        if (csrf_token && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(config.method.toUpperCase())){
+
+
+        //ako postoji csrf token i nije refresh i login, onda dodaj csrf u header
+        if (csrf_token && config.url!== '/auth/refresh' && config.url !== '/auth/login'){       //login ne treba da csrf token jer se user loguje prvi put
+            
             config.headers['X-CSRF-TOKEN'] = csrf_token;         // Flask-JWT-Extended default header ime
 
         }
@@ -54,6 +59,15 @@ axiosInstance.interceptors.request.use(
     }
 );
 
+
+
+
+
+
+
+
+
+
 // Ovaj RESPONSE interceptor hvata sve respons-ove a ispitujemo one koji imaju error i to gledamo na 401 Unauthorized da proverimo da li treba silently 
 // refreshovati access token, acces token kada istikne nakon 15 minuta automatski pri jwt_required se vraca Unauthorized pri narednom request-u
 axiosInstance.interceptors.response.use(
@@ -64,6 +78,13 @@ axiosInstance.interceptors.response.use(
         // podatke za user-a (sebe) ovo radimo jer JTI od JWT HttpOnly Cooki-a ce biti razlicit od prethodnog (i mozda ce neki podaci biti drugaciji)
         // pa da bi Redux imao azurne podatke za trenutnu sesiju
         if (error.response && error.response.status === 401 && !originalRequest._retry) {
+            
+            // // Proverimo da li uopste postoji refresh_token ili je istekao
+            // if (!Cookies.get('refresh_token')) {
+            //     console.warn("Refresh cookie nije prisutan, odjavljujem.");
+            //     store.dispatch(logoutAction()); // odjavi Kada se odjavi AUTOMATSKI ProtectedRoute.jxs ga navigatuje !isAuthenficated nagigate <login>
+            //     return Promise.reject(error);
+            // }
 
             // ovaj flag je bitan da sprecimo infinite loop za request, Ako ORIGINALNI request fail-uje opet nakon refresh attempt-a  ne zelimo
             // da on nastavi da pokusava da se refresh-uje  
@@ -78,8 +99,7 @@ axiosInstance.interceptors.response.use(
                 // Ovo radimo jer refreshToken API ne vraca podatke o user-u
                 const userDetailsResponse = await axiosInstance.get('/api/auth/me');
                 const userDetails = userDetailsResponse.data;
-                //store.dispatch(logoutAction());                  // Na FRONT-u (redux)ocisitmo state i updejtujemo Dispatch logout da ocistimo state pre postavljanja novih user details
-                //store.dispatch(setUserDetails(userDetails));     //semanticki je tacnije samo da promenimo state jer to ovaj action radi a loginSuccses menja i isAuthenticated opet u True a to nema potrebe
+
                 
                 store.dispatch(loginSuccess(userDetails)); 
 

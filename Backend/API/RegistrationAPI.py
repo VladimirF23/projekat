@@ -85,18 +85,18 @@ def register_user():
 
 
         #Uzmemo is accses_token-a (JWT) zaseban CSRF token cookie (JS citljiv), CSRF token se GENERISAO VEC zasebno u JWT tokenu jer smo stavili JWT_COOKIE_CSRF_PROTECT = True
-        csrf_token = get_csrf_token(access_token)
+        # csrf_token = get_csrf_token(access_token)
 
-        response.set_cookie(
-            "csrf_token",
-            csrf_token,
-            httponly=False,     #da moze JS da pristupi csrf
-            secure=True,
-            samesite="Lax",
-            max_age=15 * 60
-        )        
+        # response.set_cookie(
+        #     "csrf_token",
+        #     csrf_token,
+        #     httponly=False,     #da moze JS da pristupi csrf
+        #     secure=True,
+        #     samesite="Lax",
+        #     max_age=15 * 60
+        # )        
 
-        return response, 201
+        # return response, 201
 
 
     except IlegalValuesException  as e:

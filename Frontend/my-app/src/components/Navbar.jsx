@@ -35,7 +35,7 @@ const Navbar = () => {
         try {
             await logoutUser(); // Call the backend logout API
             dispatch(logout()); // Dispatch Redux logout action
-            navigate('/login'); // Redirect to login page after logout
+            navigate('/'); // Redirect to login page after logout
         } catch (error) {
             console.error("Logout failed:", error);
             // opcionalno dispatch error ka Redux ako imamo error state za global issues
@@ -86,7 +86,7 @@ const Navbar = () => {
                         </Link>
                         {/* Dugme za logout */}
                         <button 
-                            onClick={() => dispatch(logout())}
+                            onClick={handleLogout}                      //a ne  handleLogout() zato sto ako je zagradam react odma poziva i user se logoutuje bez da se klikne na dugme
                             className="bg-red-500 px-3 py-1 rounded-lg"
                         >
                             Logout

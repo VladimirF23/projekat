@@ -89,6 +89,32 @@ app.wsgi_app = ProxyFix(app.wsgi_app,x_for=1, x_proto=1,x_host=1)
 #Nema potreba da API nesto menjam on ce return-ovati npr postov-e i code 200, znace na koju IP Adresu posto kada se uspostavi konekcija client-server , hTTP se oslanja na TCP/IP protokol
 # i flask odgovara 
 
+#jwt je instanca JWTmanager-a, ovo dole je za debugovanje
+@jwt.unauthorized_loader
+def unauthorized_response(callback):
+    # This catches generic unauthorized issues, e.g., missing token
+    return jsonify({"message": "Missing or invalid token", "error_details": callback}), 401
+
+@jwt.invalid_token_loader
+def invalid_token_response(callback):
+    # This catches tokens with invalid signatures
+    return jsonify({"message": "Signature verification failed", "error_details": callback}), 401
+
+@jwt.expired_token_loader
+def expired_token_response(jwt_header, jwt_payload):
+    # This catches expired tokens
+    return jsonify({"message": "Token has expired", "error_details": "token_expired"}), 401
+
+@jwt.revoked_token_loader
+def revoked_token_response(jwt_header, jwt_payload):
+    # This catches blacklisted tokens
+    return jsonify({"message": "Token has been revoked", "error_details": "token_revoked"}), 401
+
+# @jwt.csrf_unauthorized_loader
+# def csrf_unauthorized_response(callback):
+#     # THIS ONE IS CRUCIAL FOR CSRF ERRORS
+#     # This catches failures due to missing or incorrect CSRF tokens
+#     return jsonify({"message": "CSRF token missing or incorrect", "error_details": callback}), 401
 
 
 #NE ZABORAVI DA REGISTUJES BLUEPRINTOVE !

@@ -23,8 +23,7 @@ const ProtectedRoute = ({children,adminOnly = false}) =>{
     //2. Handlovanje neprijavljenih user-a
     // ako nije prijavljen user ne moze da pristupa protected content-u i redirectujemo ga ka login page-u
     if (!isAuthenticated){
-        // `Maps` is a component from react-router-dom that performs a redirect.
-        // `replace` prop osigura da login page zameni trenutan entry u history stack
+        // replace prop osigura da login page zameni trenutan entry u history stack
         // Ovo sprecava user-a da da se vrati nazad do protected page-a direktno koristeci web browser-ov back dugme
         return <Navigate to="/login" replace />;
 
