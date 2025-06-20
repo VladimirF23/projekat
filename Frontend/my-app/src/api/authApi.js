@@ -1,6 +1,9 @@
+
+// /authApi.js
+
 import axiosInstance  from "./axiosInstance";
-
-
+import  refreshAxiosInstance  from "./axiosInstance";
+import AuthError  from "../utils/AuthError";
 //ova funkcija ce zvati API login e
 export const loginUser = async(credentials) =>{
     try{
@@ -24,31 +27,46 @@ export const logoutUser = async() =>{
         const response = await axiosInstance.post('/api/auth/logout');
         return response.data;
     }catch(error){
-        if (error.response && error.response.data && error.response.data.error) {
-            throw error.response.data.error;
-        } else {
-            throw "An unexpected error occurred during logout.";
-        }
+        console.error("DEBUG authApi: logoutUser failed:", error.response?.data || error.message);
+        throw error; //  Ovo osigurava da interceptor's catch blok uhvati gresku
+
     }
 
 };
 
 //ovo ce zvati Axios interceptor kada Access token expire-ruje
 export const refreshToken = async() =>{
+
+    console.log("DEBUG AUTHAPI: Trying to refresh token. Using refreshAxiosInstance."); // Dodato logovanje
+
     try{
         // Flask-ov /auth/refresh je POST request treba mu validan refresh token cookie
         // i trebace mu validan CSRF token iz JS readable cookie-a
-        const response = await axiosInstance.post('/api/auth/refresh',{},{withCredentials:true});
+
+        console.log("DEBUG AUTHAPI: Sending POST to /api/auth/refresh..."); // Dodato logovanje
+
+
+        //preko refresh AxiosInstance-a posto on nema prikljucene interceptore
+        const response = await refreshAxiosInstance.post('/api/auth/refresh',{},{withCredentials:true});
+
+
+        console.log("DEBUG AUTHAPI: Successfully received refresh response:", response.data); // Dodato logovanje
+
         return response.data;       //dobicemo samo poruku da su postavljeni novi cookie
 
     }catch(error)
     {
-        if (error.response && error.response.data && error.response.data.error) {
-            throw error.response.data.error;
-        } else {
-            throw "An unexpected error occurred during token refresh.";
-        }
+        // // Kljucno: Logujem grešku i OBAVEZNO JE BACI PONOVO (re-throw)
+        // console.error("DEBUG authApi: refreshToken failed:", error.response?.data || error.message);     
+        // throw error; //  Osigurava da interceptor's catch blok uhvati grešku !!!!
 
+
+        // KLJUČNO: Loguj grešku i OBAVEZNO BACI NOVU AuthError grešku
+        // Ovaj log bi se MORAO pojaviti ako Axios uhvati grešku
+        console.error("DEBUG AUTHAPI: refreshToken caught error:", error.response?.data || error.message || error); 
+        console.error("DEBUG AUTHAPI: Error object details:", error); // Loguj ceo error objekat
+        throw new AuthError("Failed to refresh token", error.response?.status);
+    
     }
 
 };

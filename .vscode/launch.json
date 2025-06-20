@@ -15,10 +15,28 @@
             "remoteRoot": "/usr/src/app"                        //path unutar kontejnera gde residuje source code, ovo nam osigurava da kada debuger dodje do breakPointa
           }                                                     //da VS code moze da mapira file-ove ispravno izmedju lokalnih i kontejnera
         ],
-        "preLaunchTask": "Start Docker Containers",              //prelaunch govori koji task pre debug sessiona da se pokrene, to je onaj tasks.json tu sam stavio ovaj start docker
+        "preLaunchTask": "Start Docker Containers",              // prelaunch govori koji task pre debug sessiona da se pokrene, to je onaj tasks.json tu sam stavio ovaj start docker
         "postDebugTask": "Stop Docker Containers"                // optional: shuts down containers after debug ends
 
-        },                                                        //Sto znaci da pre debugovanja VS code pokrece task koji startuje Docker containere koristeci docker compose                                                 
+        },                                                        // Sto znaci da pre debugovanja VS code pokrece task koji startuje Docker containere koristeci docker compose
+        
+      {
+        "name": "Debug React in Chrome",                          // react debuger
+        "type": "chrome",
+        "request": "launch",
+        "url": "https://localhost",                               // Ne treba "https://localhost:3000" jer je 3000 interno izmedju nginx-a i react containera
+        "webRoot": "${workspaceFolder}/Frontend/my-app/src",
+        "sourceMaps": true
+      }
+    ],
+      "compounds": [                                              //  compound -> da se pokrene vise debugera odjednom
+    {
+      "name": "Debug Full Stack (Flask + React)",   
+      "configurations": [
+        "Debug Flask App",
+        "Debug React in Chrome"
+      ]
+    }
     ]   
   }
   

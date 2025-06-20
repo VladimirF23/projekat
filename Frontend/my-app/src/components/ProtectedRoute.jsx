@@ -1,3 +1,5 @@
+
+// /ProtectedRoute.jsx
 import React from "react";
 import { useSelector } from "react-redux";
 import { Navigate, Outlet } from "react-router-dom";
@@ -9,15 +11,20 @@ const ProtectedRoute = ({children,adminOnly = false}) =>{
     // loading state je vazan za handlovanje incijalnog app load-ovanja,
     // kada Redux state nije jos azuran ili  autentifikacija  idalje traje onda 
 
-    //TODO dodati loading state 
-    const loading = useSelector((state) => state.auth.loading); // treba dodati loading state
+    
+    const isLoading = useSelector((state) => state.auth.loading); // treba dodati loading state
 
     //1. Handlovanje loading state-a
     // ako se authentification status ceka (npr pri pokretanju app-a ili pri proveri validnosti prilikom refresh-a) pokazuje se loading indicator
     // to sprecava flicker ka loading page-u pre nego sto app zna userov status
 
-    if(loading){
-        return <div>Loading authentification</div>
+
+    // VAZNO Ne renderujemo nista dok je provera autentifikacije u toku
+    // Ovo sprečava renderovanje zasticenog sadržaja (ili preusmeravanje) 
+    // dok se inicijalna provera autentifikacije ne zavrsi
+    //  To eliminise treperenje UI-a i sprecava da se neautorizovani API pozivi pokrenu prerano 
+    if(isLoading){
+        return null;
     }
 
     //2. Handlovanje neprijavljenih user-a

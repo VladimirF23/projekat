@@ -1,3 +1,6 @@
+
+// authSlice.js
+
 import { createSlice } from "@reduxjs/toolkit";
 
 //inicijalno stanje za auth slice, user cuva user data

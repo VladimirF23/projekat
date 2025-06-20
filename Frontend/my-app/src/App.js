@@ -1,6 +1,6 @@
-
-import React, {useEffect} from 'react';
-import { Provider,useDispatch } from 'react-redux';
+// App.js
+import React, {useEffect, useRef} from 'react';
+import { Provider,useDispatch,useSelector } from 'react-redux';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import store from './app/store';
 
@@ -15,11 +15,10 @@ import NotFoundPage from "./pages/NotFoundPage";
 import AccessDeniedPage from './pages/AccessDeniedPage';
 
 //za redus stanje
-import { authCheckStart,loginSuccess,logout,authCheckComplete } from './features/authorization/authSlice';
+import { authCheckStart,loginSuccess,authCheckComplete } from './features/authorization/authSlice';
 //API
 import axiosInstance from './api/axiosInstance';
-import { logoutUser } from './api/authApi';
-
+ 
 
 
 /*
@@ -68,41 +67,54 @@ const AppContent  = () => {
   const dispatch = useDispatch();
 
 
-// Effect to run once on component mount to check initial authentication status
-  useEffect(() => {
-    const checkAuthStatus = async() =>{
-      dispatch(authCheckStart());       // Postavimo loading na true, clear errors
+// Uzmi loading stanje iz Reduxa
+const isLoading = useSelector((state) => state.auth.loading); 
+const hasAuthCheckRun = useRef(false);
 
-      try{
-        // This call will send the HttpOnly access token cookie automatically
-        const userDetailsResponse = await axiosInstance.get('/api/auth/me');
-        const userDetails = userDetailsResponse.data;
-        dispatch(loginSuccess(userDetails)); // User is authenticated, set details
+// kad se pokrene app na user-ovom browser-u ovo se pokrece
+useEffect(() => {
+
+  if (hasAuthCheckRun.current) {
+            // If the check has already run, do nothing on subsequent Strict Mode re-runs
+            return;
+  }
+  hasAuthCheckRun.current = true; // Mark that the check is now running
+
+  const checkAuthStatus = async () => {
+    console.log("DEBUG: Auth check started.");
+    dispatch(authCheckStart()); // Set loading to true, clear errors
 
 
-      }catch(error){
-        // Ako /api/auth/me return-uje 401 (ili nesto drugo) znaci da nije validna sesija
-        // axios interceptor ce pokusati da refresh token
-        // mislim da mi ovo ni ne treba
-        // Ako i to fail-uje on ce dispatch-ovati logoutAction().
-        // Ovde osiguramo logout ako nema user details
-        console.log("Initial auth check failed, user not logged in or token invalid.", error);
-        dispatch(logout())
 
-        try {
-          await logoutUser();     // opcionalno: osiguramo da je  server-side cist
-        } catch (apiLogoutError) {
-          console.error("API logout during initial check failed:", apiLogoutError);
-        } 
+    try {
+      console.log("DEBUG: Attempting to get user details from /api/auth/me");
+      // This call will send the HttpOnly access token cookie automatically
+      const userDetailsResponse = await axiosInstance.get('/api/auth/me');
 
-      }finally{
-        dispatch(authCheckComplete()) // Postavimo loading na false za svaki outcome
-      }
+      console.log("DEBUG: User details response received:", userDetailsResponse.data);
+      const userDetails = userDetailsResponse.data;
+      dispatch(loginSuccess(userDetails)); // User is authenticated, set details
+      console.log("DEBUG AppContent: User authenticated successfully.");
 
-      
-    };
-    checkAuthStatus();
-  }, [dispatch]);
+    } catch (error) {
+      console.error("DEBUG: Initial /api/auth/me request failed. Error details:", error.response?.data || error.message);
+      // The axios interceptor handles the logout/redirect if refresh fails.
+      // Do NOT dispatch logout() or redirect here directly.
+      console.log("Initial auth check failed or refresh failed. User is not authenticated. Interceptor handled.");
+
+    } finally {
+      console.log("DEBUG: Auth check complete (finally block).");
+      dispatch(authCheckComplete()); // Set loading to false for every outcome
+    }
+  };
+  checkAuthStatus();
+}, [dispatch]);
+
+  // Dodao uslovno renderovanje dok se ne zavrsi provera autentifikacije
+  // ovo je vazno
+    if (isLoading) {
+        return <div>Loading application...</div>; //mogu da stavim ovde spinner neki
+    }
 
   return( 
   <Router>
