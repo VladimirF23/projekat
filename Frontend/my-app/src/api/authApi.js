@@ -1,9 +1,46 @@
 
 // /authApi.js
-
+import axios from "axios";
 import axiosInstance  from "./axiosInstance";
-import  refreshAxiosInstance  from "./axiosInstance";
 import AuthError  from "../utils/AuthError";
+import Cookies from 'js-cookie';
+
+
+// Kreiraj *posebnu* Axios instancu samo za refresh token pozive, ovde
+const refreshAxiosInstance = axios.create({
+    baseURL: 'https://localhost', 
+    headers: {
+        'Content-Type': 'application/json',
+    },
+    withCredentials: true,
+    // *** KLJUČNA IZMENA: Eksplicitno definiraj validateStatus ***
+    // Ovo osigurava da Axios uvek odbije Promise za 4xx/5xx statuse
+    validateStatus: function (status) {
+        return status >= 200 && status < 300; // Odbij ako status nije 2xx
+    },
+});
+
+// *** KLJUČNO: Dodaj request interceptor za refreshAxiosInstance ***
+refreshAxiosInstance.interceptors.request.use(
+    (config) => {
+        // Procitaj CSRF token za refresh iz csrf_refresh_token cookie-a
+        const csrf_refresh_token = Cookies.get('csrf_refresh_token');
+
+        // Ako postoji refresh CSRF token, dodaj ga u header
+        if (csrf_refresh_token) {
+            config.headers['X-CSRF-TOKEN'] = csrf_refresh_token; 
+            console.log("DEBUG AUTHAPI: Adding X-CSRF-TOKEN (refresh) to refresh request."); // Dodato za debug
+        } else {
+            console.warn("DEBUG AUTHAPI: csrf_refresh_token cookie not found for refresh request."); // Upozorenje ako nedostaje
+        }
+        return config;
+    },
+    (error) => {
+        return Promise.reject(error);
+    }
+);
+
+
 //ova funkcija ce zvati API login e
 export const loginUser = async(credentials) =>{
     try{

@@ -90,10 +90,7 @@ useEffect(() => {
       console.log("DEBUG: Attempting to get user details from /api/auth/me");
 
 
-      // This call will send the HttpOnly access token cookie automatically
-      const userDetailsResponse = await axiosInstance.get('/api/auth/me', {
-      _isInitialAuthCheck: true // <--- Ovaj flag je ključan
-      });
+      const userDetailsResponse = await axiosInstance.get('/api/auth/me');
 
 
       console.log("DEBUG: User details response received:", userDetailsResponse.data);

@@ -38,15 +38,6 @@ const axiosInstance = axios.create({
 })
 
 
-// Kreiraj *posebnu* Axios instancu samo za refresh token pozive
-// Ova instanca NEMA prikačen glavni response interceptor, sprecava rekurzivnu petlju
-export const refreshAxiosInstance = axios.create({
-    baseURL: 'https://localhost', // Mora pokazivati na Nginx
-    headers: {
-        'Content-Type': 'application/json',
-    },
-    withCredentials: true, // Obavezno za slanje HttpOnly kolačića
-});
 
 
 
@@ -141,34 +132,17 @@ axiosInstance.interceptors.response.use(
         }
 
 
-        // 3. Posebno rukovanje za inicijalni OVAJ SE POZIVA OD STRANE App.js na pocetku  '/api/auth/me' poziv kada je 401
-        // Ako je ovo _isInitialAuthCheck i vraća 401, NECEMO POKUSAVATI REFRESH
-        // Ovo znači da korisnik nije prijavljen i odmah ga "izbacujemo".
-        if (originalRequest.url === '/api/auth/me' && originalRequest._isInitialAuthCheck && error.response && error.response.status === 401) {
-            console.log("DEBUG INTERCEPTOR: Uhvaćen 401 za inicijalni /api/auth/me poziv (_isInitialAuthCheck). Ne pokušavam refresh, dispečujem logout.");
-            
-            store.dispatch(logoutAction()); // Explicitno dispečuj logout
-            // OVAJ KRAJNJI KORAK: Nema potrebe za window.location.href ovde.
-            // App.js' finally block će postaviti isLoading=false,
-            // a ProtectedRoute će preusmeriti.
-            return Promise.reject(error); // Propagiraj grešku da se App.js catch blok izvrši.
-        }
 
-
-
-        
-        // 4. Opšte rukovanje 401 za SVE ostale zahteve, user ulogovan i isteknemo access token provera se na osnovu refresh-a da li mu se dopusta nastavak prijave
-        // ili se izbacuje 
-        //  (zasticene rute, ali NE inicijalni /me)
+        // 3. Opšte rukovanje 401 za SVE ostale zahteve (uključujući /api/auth/me)
         // i koji nisu već retry-ovani. OVO JE MESTO GDE SE REFRESH AKTIVIRA.
         if (error.response && error.response.status === 401 && !originalRequest._retry) {
-            console.log("DEBUG INTERCEPTOR: Uhvaćen 401 za zaštićeni zahtev (nije inicijalni /me):", originalRequest.url, ". Pokušavam refresh.");
+            console.log("DEBUG INTERCEPTOR: Caught 401 for protected request:", originalRequest.url, ". Attempting token refresh.");
             
             originalRequest._retry = true; // Označi da je pokušano (za ovaj specifičan zahtev)
 
             // Debounce: Ako je refresh već u toku, dodaj zahtev u red čekanja
             if (isRefreshing) {
-                console.log("DEBUG INTERCEPTOR: Refresh je već u toku, dodajem zahtev u red čekanja.");
+                console.log("DEBUG INTERCEPTOR: Refresh is already in progress, queuing request.");
                 return new Promise(function(resolve, reject) {
                     failedQueue.push({ resolve, reject });
                 }).then(() => axiosInstance(originalRequest)).catch(err => Promise.reject(err));
@@ -178,39 +152,42 @@ axiosInstance.interceptors.response.use(
 
             try {
                 console.log("DEBUG INTERCEPTOR: Calling refreshToken()...");
-                await refreshToken();                                           // Ovaj poziv može baciti AuthError i ovaj tole catch ga hvata
-                console.log("DEBUG INTERCEPTOR: refreshToken() uspeo.");
+                await refreshToken(); // Ovaj poziv će baciti AuthError ako refresh propadne
+                console.log("DEBUG INTERCEPTOR: refreshToken() succeeded.");
                 
-                // Ako je refresh uspešan, azuriraj detalje korisnika i ponovi originalni zahtev
-                const userDetailsResponse = await axiosInstance.get('/api/auth/me'); 
+                // Ako je refresh uspešan, ažuriraj detalje korisnika i ponovi originalni zahtev
+                const userDetailsResponse = await axiosInstance.get('/api/auth/me'); // Proveri /api/ prefiks
                 const userDetails = userDetailsResponse.data;
                 store.dispatch(loginSuccess(userDetails)); 
-                console.log("DEBUG INTERCEPTOR: Detalji korisnika ažurirani, ponavljam originalni zahtev.");
+                console.log("DEBUG INTERCEPTOR: User details updated, re-attempting original request.");
 
                 isRefreshing = false;
                 processQueue(null, userDetails);
-                return axiosInstance(originalRequest);
+                return axiosInstance(originalRequest); // Ponovi originalni zahtev
 
             } catch (innerError) {
-                // Ovaj catch blok ce uhvatiti BILO KOJU grešku iz `await refreshToken()`,
-                // uključujući i našu `AuthError` (koju će onda obraditi prvi `if` blok).
-                console.error("DEBUG INTERCEPTOR: Greška pri osvežavanju tokena (uhvaćena u inner catch - opšte 401):", innerError);
+                // Ovaj catch blok će uhvatiti BILO KOJU grešku iz `await refreshToken()`,
+                // uključujući i našu `AuthError` (koju će onda obraditi prvi `if` blok na vrhu).
+                console.error("DEBUG INTERCEPTOR: Greška pri osvežavanju tokena (uhvaćena u inner catch):", innerError);
 
                 isRefreshing = false;
                 processQueue(innerError, null);
 
-                store.dispatch(logoutAction()); 
-                try { 
-                    await logoutUser(); 
-                } catch (apiLogoutError) { 
-                    console.error("Logout API poziv nije uspeo nakon neuspeha refresh-a (očekivano za neautentifikovane):", apiLogoutError); 
-                }
+                store.dispatch(logoutAction());
+                //await logoutUser pravi beskonacnu petlju 
+                // try { 
+                //     await logoutUser(); 
+                // } catch (apiLogoutError) { 
+                //     console.error("Logout API call failed after refresh failure (expected for unauthenticated):", apiLogoutError); 
+                // }
                 
                 // Važno: Ovu grešku propagiramo, a `AuthError` handler na vrhu će uraditi redirect.
                 return Promise.reject(innerError); 
             }
         }
 
+        
+        // 4. Za sve ostale greške (koje nisu 401, ili su već retry-ovane), samo ih propagiraj
         console.log("DEBUG INTERCEPTOR: Greška nije 401 (za zaštićene) ili je već retry-ovana. Propagiram originalnu grešku.", error);
         return Promise.reject(error); // Za sve ostale greške, samo ih re-throw-uj
 

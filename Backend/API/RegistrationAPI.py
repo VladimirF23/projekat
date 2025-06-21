@@ -34,8 +34,23 @@ def register_user():
         #mysql ce vratiti dict posto sam stavio da kod cursora dict=True
         user =  LoginUserService(user_data)
 
-        access_token =create_access_token(identity=str(user["id"]),additional_claims={"global_admin":"global_admin" if user["global_admin"] else "user"},expires_delta=timedelta(minutes=15))              #najboljeje id da koristimo za identity jer se on niakd nece menjatim, 
-        refresh_token = create_refresh_token(identity=str(user["id"]),additional_claims={"global_admin":"global_admin" if user["global_admin"] else "user"},expires_delta=timedelta(days=7))              #a username se moze menjati
+        access_token = create_access_token(
+            identity=str(user["id"]),
+            additional_claims={
+                "username": user["username"],           
+                "global_admin": user["global_admin"]    
+            },
+            expires_delta=timedelta(minutes=15) # 20 sekundi za testiranje
+        )
+        
+        refresh_token = create_refresh_token(
+            identity=str(user["id"]),
+            additional_claims={
+                "username": user["username"],           
+                "global_admin": user["global_admin"]   
+            },
+            expires_delta=timedelta(days=7) 
+        )
 
         decoded_access  = decode_token(access_token)
         decoded_refresh = decode_token(refresh_token)

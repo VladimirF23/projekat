@@ -41,8 +41,25 @@ def login():
 
         #na globalnom nivou u main-u smo set-upovali token i koje algoritam sa enkripciju da koristi i sve, ovde kreiramo te tokene
         #identinty mora biti str() 
-        access_token =create_access_token(identity=str(user["id"]),additional_claims={"global_admin":"global_admin" if user["global_admin"] else "user"},expires_delta=timedelta(seconds=20))              #najboljeje id da koristimo za identity jer se on niakd nece menjatim, 
-        refresh_token = create_refresh_token(identity=str(user["id"]),additional_claims={"global_admin":"global_admin" if user["global_admin"] else "user"},expires_delta=timedelta(days=7))              #a username se moze menjati
+       
+
+        access_token = create_access_token(
+            identity=str(user["id"]),
+            additional_claims={
+                "username": user["username"],           
+                "global_admin": user["global_admin"]    
+            },
+            expires_delta=timedelta(seconds=1) # 20 sekundi za testiranje
+        )
+        
+        refresh_token = create_refresh_token(
+            identity=str(user["id"]),
+            additional_claims={
+                "username": user["username"],           
+                "global_admin": user["global_admin"]   
+            },
+            expires_delta=timedelta(seconds=1)      #days=7
+        )
 
         #JWT_COOKIE_SECURE = True -> kaze Flask-JWT-Extended da JWT cookie  salje SAMO preko HTTPS (secure connection), da ne bi preko HTTP i tako sprecava man i middle attack
         #JWT_COOKIE_CSRF_PROTECT = True -> drugi CSRF token se pravi (random string razlicit od JWT tokena) i on se MORA slati u custom header-u (X-CSRF token)
@@ -213,11 +230,26 @@ def refresh():
         pipe.setex(f"blocked_token:{old_refresh_jti}",int(timedelta(days=7).total_seconds()),"invalid")       
         
         
-        # pravimo novi acsess token
-        new_access_token = create_access_token(identity=identity,additional_claims={"global_admin": claims.get("global_admin")},expires_delta=timedelta(minutes=15))
 
+        # pravimo novi acsess token
+
+        new_access_token = create_access_token(
+            identity=identity,
+            additional_claims={
+                "username": claims.get("username", ""),           
+                "global_admin": claims.get("global_admin")    
+            },
+            expires_delta=timedelta(minutes=15) 
+        )
         #novi refresh token pravimo
-        new_refresh_token = create_refresh_token(identity=identity,additional_claims={"global_admin": claims.get("global_admin")},expires_delta=timedelta(days=7))
+        new_refresh_token = create_refresh_token(
+            identity=identity,
+            additional_claims={
+                "username": claims.get("username", ""),           
+                "global_admin": claims.get("global_admin")   
+            },
+            expires_delta=timedelta(days=7) 
+        )
 
 
         decoded_new_access  = decode_token(new_access_token)
@@ -266,15 +298,7 @@ def refresh():
         # Ne treba ovo dole set_access_cookies ce automatski postaviti csrf_access_token
         # Regenerisemo i setujemo new CSRF token iz new_access tokena
         # csrf_token = get_csrf_token(new_access_token)
-
-        # response.set_cookie(
-        #     "csrf_token",
-        #     csrf_token,
-        #     httponly=False,     #da moze JS da pristupi csrf
-        #     secure=True,
-        #     samesite="Lax",
-        #     max_age=15 * 60
-        # )        
+ 
         
         return response
     
@@ -434,7 +458,7 @@ def get_current_user_details():
         user_details = {
             "id": user_metadata.get("user_id"),
             "username": user_metadata.get("username"),
-            "global_admin": user_metadata.get("global_admin") == "global_admin" #pazi u string ga convertujem ovde ! 
+            "global_admin": user_metadata.get("global_admin") 
         }
 
         return jsonify(user_details), 200
