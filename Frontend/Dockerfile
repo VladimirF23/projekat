@@ -48,9 +48,21 @@ COPY ./my-app/ ./
 # Docker will have to reinstall dependencies even when there's no change in package.json. 
 #This can slow down your build times unnecessarily.
 
-#Expose port
 
+# OBRISATI U PRODUCTION-u ! ! ! 
+# KLJUČNO: Ovde postavljamo varijable za React Development Server 
+# HTTPS=true govori Reactu da aplikacija radi preko HTTPS-a.
+# React dev server sluša na 3000, i tu mu šaljemo WebSockets
+
+#ovo je fix bio za error sa WebSocket connection to 'wss://localhost:3000/ws' failed
+ENV HTTPS=true \
+    WDS_SOCKET_PORT=3000 \ 
+    DANGEROUSLY_DISABLE_HOST_CHECK=true
+
+#Expose port
 EXPOSE 3000
+
+
 
 #Start react app
 CMD ["npm","start"]

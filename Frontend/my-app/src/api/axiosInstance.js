@@ -105,57 +105,70 @@ axiosInstance.interceptors.response.use(
     (response) => response,                         //Ako je uspesan onda pass-ujemo
     async (error) => {
         const originalRequest = error.config;
-        
-        console.log("DEBUG: RESPONCE INTERCEPTOR POCETAK from /api/auth/me");
+        console.log("DEBUG INTERCEPTOR: Start of response processing for URL:", originalRequest.url);
 
-        
-        // Izuzmi login i register rute iz ove logike interceptora
-        // (npr. ako vraćaju 401 za pogresne kredencijale, ne zelimo da pokusamo refresh)
-        if (originalRequest.url === '/auth/login' || originalRequest.url === '/auth/register') {
-            return Promise.reject(error);
-        }
-        
-        
+        // 1. KLJUČNO: Prvo uhvati našu prilagođenu AuthError koju baca refreshToken().
+        // Ovo je najviši prioritet za rukovanje neuspešnim osvežavanjem tokena.
 
-        // **NOVA LOGIKA: Uhvati AuthError direktno ako dolazi od prethodnog pokusaja refresh-a**
+
+        //pogledaj u notepad-u zasto treba ovaj prvi if
+
         if (error instanceof AuthError && error.message === "Failed to refresh token") {
-            console.error("DEBUG INTERCEPTOR: Prilagođena AuthError iz refresh funkcije uhvaćena. Forisrano odjavljivanje.", error); // Dodato logovanje
-            
-            isRefreshing = false;
-            processQueue(error, null);
+            console.error("DEBUG INTERCEPTOR: Custom AuthError from refreshToken catched. Forcing Logout and Re-routing to login page", error);
 
-            store.dispatch(logoutAction());
+            isRefreshing = false;                   // Reset refresh flag
+            processQueue(error, null);              // Reject all queued requests
+
+            store.dispatch(logoutAction());         // Dispatch Redux logout action
             try { 
-                await logoutUser(); 
+                await logoutUser();                 // Attempt server-side invalidation
             } catch (apiLogoutError) { 
-                console.error("Logout API poziv nije uspeo nakon neuspeha refresh-a (očekivano za neautentifikovane):", apiLogoutError); 
+                console.error("Logout API call didnt happen after failed refresh-a (expected for Unauthentificated):", apiLogoutError); 
             }
             
-            // Perform hard redirect only AFTER all state cleanup is done
-            if (window.location.pathname !== '/login') { // Prevent redundant redirect if already on login page
-                window.location.href = '/login';
+            if (window.location.pathname !== '/login') { 
+                window.location.href = '/login';     // HARD REDIRECT
             }
             return Promise.reject(error);
+   
+        }
+
+
+        // 2. Izuzmi login i register rute iz ove logike interceptora (ako nisu AuthError)
+        if (originalRequest.url === '/api/auth/login' || originalRequest.url === '/api/auth/register') { 
+            console.log("DEBUG INTERCEPTOR: Login/Register URL, preskačem refresh logiku.");
+            return Promise.reject(error);
+        }
+
+
+        // 3. Posebno rukovanje za inicijalni OVAJ SE POZIVA OD STRANE App.js na pocetku  '/api/auth/me' poziv kada je 401
+        // Ako je ovo _isInitialAuthCheck i vraća 401, NECEMO POKUSAVATI REFRESH
+        // Ovo znači da korisnik nije prijavljen i odmah ga "izbacujemo".
+        if (originalRequest.url === '/api/auth/me' && originalRequest._isInitialAuthCheck && error.response && error.response.status === 401) {
+            console.log("DEBUG INTERCEPTOR: Uhvaćen 401 za inicijalni /api/auth/me poziv (_isInitialAuthCheck). Ne pokušavam refresh, dispečujem logout.");
+            
+            store.dispatch(logoutAction()); // Explicitno dispečuj logout
+            // OVAJ KRAJNJI KORAK: Nema potrebe za window.location.href ovde.
+            // App.js' finally block će postaviti isLoading=false,
+            // a ProtectedRoute će preusmeriti.
+            return Promise.reject(error); // Propagiraj grešku da se App.js catch blok izvrši.
         }
 
 
 
         
-        // Kada bilo koji API return-uje 401 (Unauthorized) pokusava da pozove refreshToken, ako je uspesan refresh poziva /api/auth/me da dobije najazurnije
-        // podatke za user-a (sebe) ovo radimo jer JTI od JWT HttpOnly Cooki-a ce biti razlicit od prethodnog (i mozda ce neki podaci biti drugaciji)
-        // pa da bi Redux imao azurne podatke za trenutnu sesiju
+        // 4. Opšte rukovanje 401 za SVE ostale zahteve, user ulogovan i isteknemo access token provera se na osnovu refresh-a da li mu se dopusta nastavak prijave
+        // ili se izbacuje 
+        //  (zasticene rute, ali NE inicijalni /me)
+        // i koji nisu već retry-ovani. OVO JE MESTO GDE SE REFRESH AKTIVIRA.
         if (error.response && error.response.status === 401 && !originalRequest._retry) {
-            console.log("DEBUG: RESPONCE INTERCEPTOR 3 IF ", error.response);
+            console.log("DEBUG INTERCEPTOR: Uhvaćen 401 za zaštićeni zahtev (nije inicijalni /me):", originalRequest.url, ". Pokušavam refresh.");
+            
+            originalRequest._retry = true; // Označi da je pokušano (za ovaj specifičan zahtev)
 
-
-
-            // ovaj flag je bitan da sprecimo infinite loop za request, Ako ORIGINALNI request fail-uje opet nakon refresh attempt-a  ne zelimo
-            // da on nastavi da pokusava da se refresh-uje  
-            originalRequest._retry = true; 
-
-
-            // Debouncing: Ako je refresh već u toku, dodaj zahtev u red čekanja
+            // Debounce: Ako je refresh već u toku, dodaj zahtev u red čekanja
             if (isRefreshing) {
+                console.log("DEBUG INTERCEPTOR: Refresh je već u toku, dodajem zahtev u red čekanja.");
                 return new Promise(function(resolve, reject) {
                     failedQueue.push({ resolve, reject });
                 }).then(() => axiosInstance(originalRequest)).catch(err => Promise.reject(err));
@@ -164,77 +177,44 @@ axiosInstance.interceptors.response.use(
             isRefreshing = true; // Postavi flag: refresh je u toku
 
             try {
-                // Pokusaj da refresh-ujemo token, await refreshToken -> Ovo setuje novi HttpOnly cookies na browser-u
-                await refreshToken();  
-                console.log("DEBUG: Pokusaj refresh-a ");
-
-                // Posle uspesnog refresh-a treba da azuriramo podatke user-a 
-                // zato sto novi Acces Token ima razlicit JTI i mozda nove/razl. claim-ove a stari podaci u Redux mogu biti zastareli
-                // Ovo radimo jer refreshToken API ne vraca podatke o user-u
-                const userDetailsResponse = await axiosInstance.get('/api/auth/me');
+                console.log("DEBUG INTERCEPTOR: Calling refreshToken()...");
+                await refreshToken();                                           // Ovaj poziv može baciti AuthError i ovaj tole catch ga hvata
+                console.log("DEBUG INTERCEPTOR: refreshToken() uspeo.");
+                
+                // Ako je refresh uspešan, azuriraj detalje korisnika i ponovi originalni zahtev
+                const userDetailsResponse = await axiosInstance.get('/api/auth/me'); 
                 const userDetails = userDetailsResponse.data;
-            
                 store.dispatch(loginSuccess(userDetails)); 
+                console.log("DEBUG INTERCEPTOR: Detalji korisnika ažurirani, ponavljam originalni zahtev.");
 
-                // Resetuj flag i obradi sve zahteve iz reda cekanja
                 isRefreshing = false;
                 processQueue(null, userDetails);
-
-                console.log("DEBUG: return axiosInstance originalRequset");
-
-                // Pokusavamo originalani request sa novim validnim cookiem
                 return axiosInstance(originalRequest);
 
-            } catch (refreshError) {
-                // Ako Refresh ne uspe (e.g refresh token istekao ili blacklisted)
-                // log out user-a sa frontend-a
-                console.log("DEBUG: Catch u responce interseptoru ",refreshError);
-                console.error("Token refresh failed, forcing logout:", refreshError);
- 
-                isRefreshing = false; // Resetuj refresh flag
-                processQueue(refreshError, null); // Odbij sve zahteve iz reda čekanja
- 
- 
- 
-                store.dispatch(logoutAction());                         // Dispatch logout action to Redux store
+            } catch (innerError) {
+                // Ovaj catch blok ce uhvatiti BILO KOJU grešku iz `await refreshToken()`,
+                // uključujući i našu `AuthError` (koju će onda obraditi prvi `if` blok).
+                console.error("DEBUG INTERCEPTOR: Greška pri osvežavanju tokena (uhvaćena u inner catch - opšte 401):", innerError);
 
-                // Pozovemo API da osiguramo server-side invalidation ako treba (refresh failure uglavnom govori da je na serveru vec setovano)
-                try {
-                    await logoutUser(); // Na serveru da ocistimo
-                } catch (logoutApiError) {
-                    console.error("Logout API call failed after refresh failure:", logoutApiError);
+                isRefreshing = false;
+                processQueue(innerError, null);
+
+                store.dispatch(logoutAction()); 
+                try { 
+                    await logoutUser(); 
+                } catch (apiLogoutError) { 
+                    console.error("Logout API poziv nije uspeo nakon neuspeha refresh-a (očekivano za neautentifikovane):", apiLogoutError); 
                 }
                 
-
- 
-                // 
-                // Znaci da smo proverili da li je user ulogovan ne bitno da li jeste ili nije
-                //ovo nam je vazno da bi Redux znao stanje i da bi isLoading bio gotov !
-                store.dispatch(authCheckComplete()); // 
-
-
-                // KLJUCNO: Hard redirect na login stranicu.
-                // Ovo trenutno prekida izvršavanje klijentske aplikacije i sprečava dalja okidanja API poziva.
-                // React Router <Navigate> se oslanja na React renderovanje, dok window.location.href odmah preusmerava browser.
-                if (window.location.pathname !== '/login') { // Prevent redundant redirect if already on login page
-                    window.location.href = '/login';
-                }
-                
-                // Before the hard redirect, ensure the loading state is completed.
-                // This will set isLoading to false in Redux before the page navigation.
-                console.log("DEBUG: Window location glupost");
-
-                
-                // Redirect ka login page ovo uglavnom handluje React Router guard
-                // ili global listener na isAuthenticated state.
-                // hanldovacemo redirection u ProtectedRoute component.
-                return Promise.reject(refreshError); // Propagiramo refresh error
+                // Važno: Ovu grešku propagiramo, a `AuthError` handler na vrhu će uraditi redirect.
+                return Promise.reject(innerError); 
             }
         }
 
-        return Promise.reject(error); // za sve ostale error-e, samo re-throwujemo
-    }
+        console.log("DEBUG INTERCEPTOR: Greška nije 401 (za zaštićene) ili je već retry-ovana. Propagiram originalnu grešku.", error);
+        return Promise.reject(error); // Za sve ostale greške, samo ih re-throw-uj
 
+    }
 );
 
 

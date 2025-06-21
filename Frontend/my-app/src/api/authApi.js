@@ -17,7 +17,7 @@ export const loginUser = async(credentials) =>{
         if (error.response && error.response.data && error.response.data.error) {
             throw error.response.data.error;
         }else{
-            throw "An unexpected error occurred.";
+            throw new Error("An unexpected error occurred.");
         }
     }
 };
@@ -34,7 +34,10 @@ export const logoutUser = async() =>{
 
 };
 
-//ovo ce zvati Axios interceptor kada Access token expire-ruje
+//Ovo zove preko NOVOG AXIO-sa refreshAxiosInstance /refresh koristim novi AXIOS posto ovaj nema responce interceptor-a
+//zakacenog i da onda ne bi doslo DO BESKONACNE PETLJE kada bi refresh fail-ovao jer da ima responce interceptor onda bi on ponovo pokusao da se refresh-uje -> besk petlja
+// kada ovaj refreshToken propadne on ce baciti AuthError koji cemo mi uhvatiti u try catch block-u interceptora koji je bio pozvan za request koji je zvao
+// refresh !!
 export const refreshToken = async() =>{
 
     console.log("DEBUG AUTHAPI: Trying to refresh token. Using refreshAxiosInstance."); // Dodato logovanje
@@ -56,16 +59,11 @@ export const refreshToken = async() =>{
 
     }catch(error)
     {
-        // // Kljucno: Logujem grešku i OBAVEZNO JE BACI PONOVO (re-throw)
-        // console.error("DEBUG authApi: refreshToken failed:", error.response?.data || error.message);     
-        // throw error; //  Osigurava da interceptor's catch blok uhvati grešku !!!!
-
-
-        // KLJUČNO: Loguj grešku i OBAVEZNO BACI NOVU AuthError grešku
-        // Ovaj log bi se MORAO pojaviti ako Axios uhvati grešku
-        console.error("DEBUG AUTHAPI: refreshToken caught error:", error.response?.data || error.message || error); 
-        console.error("DEBUG AUTHAPI: Error object details:", error); // Loguj ceo error objekat
-        throw new AuthError("Failed to refresh token", error.response?.status);
+        // refresh je fail-ovao sto znaci da je istekao access cookie ili je user banovan i onda ce se tamo u responce interceptoru uhvatiti ovaj exception
+        // i forsiracese login da se ponovi
+        console.error("DEBUG AUTHAPI: refreshToken caught Axios error:", error.response?.data || error.message || error); 
+        console.error("DEBUG AUTHAPI: Full error object details from refreshAxiosInstance:", error); 
+        throw new AuthError("Failed to refresh token", error.response?.status || 0); 
     
     }
 

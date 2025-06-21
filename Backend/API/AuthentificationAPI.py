@@ -41,7 +41,7 @@ def login():
 
         #na globalnom nivou u main-u smo set-upovali token i koje algoritam sa enkripciju da koristi i sve, ovde kreiramo te tokene
         #identinty mora biti str() 
-        access_token =create_access_token(identity=str(user["id"]),additional_claims={"global_admin":"global_admin" if user["global_admin"] else "user"},expires_delta=timedelta(minutes=15))              #najboljeje id da koristimo za identity jer se on niakd nece menjatim, 
+        access_token =create_access_token(identity=str(user["id"]),additional_claims={"global_admin":"global_admin" if user["global_admin"] else "user"},expires_delta=timedelta(seconds=20))              #najboljeje id da koristimo za identity jer se on niakd nece menjatim, 
         refresh_token = create_refresh_token(identity=str(user["id"]),additional_claims={"global_admin":"global_admin" if user["global_admin"] else "user"},expires_delta=timedelta(days=7))              #a username se moze menjati
 
         #JWT_COOKIE_SECURE = True -> kaze Flask-JWT-Extended da JWT cookie  salje SAMO preko HTTPS (secure connection), da ne bi preko HTTP i tako sprecava man i middle attack
